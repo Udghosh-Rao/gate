@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production & Build outputs
+.next/
+out/
+build/
+dist/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Database & SQLite files
+*.sqlite
+*.sqlite3
+*.db
+exam_prep.db
+examplatform.db
+*.db-journal
+.pytest_cache/
+
+# Uploads & User generated content
+uploads/
+apps/api/uploads/
+
+# Environment variables
+.env
+.env*.local
+
+# Logs & Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
