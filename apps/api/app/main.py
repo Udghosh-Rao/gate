@@ -8,9 +8,9 @@ import os
 
 from fastapi import FastAPI, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis import Redis
 
 from app.core.config import settings
 from app.core.database import engine, Base, get_db
@@ -23,12 +23,17 @@ async def lifespan(app: FastAPI):
     # Ensure upload directory exists BEFORE mounting static files
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
-    # Mount uploads as static files now that directory is guaranteed to exist
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+    if settings.is_production:
+        # Production uses managed object storage and private downloads; local
+        # filesystem paths are never exposed as static content.
+        Redis.from_url(settings.REDIS_URL).ping()
+    # Uploaded files are served through an authorization-aware download route,
+    # never through a static directory mount (which would expose drafts).
 
     # Create tables if not present
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if not settings.is_production:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
     yield
 
@@ -40,8 +45,8 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="Multi-Exam Competitive Examination Platform API (GATE DA, CS, IIT JAM, etc.)",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
     lifespan=lifespan,
 )
 
@@ -79,9 +84,12 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         await db.execute(text("SELECT 1"))
         db_status = "healthy"
-    except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
+    except Exception:
+        db_status = "unhealthy"
 
+    if db_status != "healthy":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Database is unavailable")
     return {
         "status": "online" if db_status == "healthy" else "degraded",
         "database": db_status,

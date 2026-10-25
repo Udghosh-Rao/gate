@@ -10,6 +10,7 @@ Seeds:
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import uuid
 
@@ -26,15 +27,28 @@ from app.models.test import (
     TestSeriesStatus, TestStatus,
     ResultReleasePolicy, ExplanationReleasePolicy
 )
+from app.core.config import settings
 
 
-async def seed():
+@asynccontextmanager
+async def _session_scope(provided_session=None):
+    if provided_session is not None:
+        yield provided_session
+    else:
+        async with async_session_factory() as session:
+            yield session
+
+
+async def seed(provided_session=None):
     """Execute complete database seeding."""
-    print("🌱 Initializing database schema...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.is_production:
+        raise RuntimeError("Seed data is disabled in production")
+    if provided_session is None:
+        print("🌱 Initializing database schema...")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    async with async_session_factory() as session:
+    async with _session_scope(provided_session) as session:
         # 1. Seed Users
         print("👤 Creating default accounts...")
         existing_admin = await session.execute(
@@ -499,6 +513,11 @@ async def seed():
         print("   Student:         student@examplatform.dev  / Student@Dev123")
         print("   Content Manager: content@examplatform.dev  / Content@Dev123")
         print("--------------------------------------------------")
+
+
+async def seed_database(db):
+    """Seed an explicitly supplied development/test database session."""
+    await seed(db)
 
 
 if __name__ == "__main__":

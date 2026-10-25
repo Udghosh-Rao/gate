@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Exam, Subject, Resource } from "../lib/types";
-import { FALLBACK_SUBJECTS, FALLBACK_RESOURCES, fetchSubjects, fetchPublishedResources } from "../lib/api";
+import { Exam, Subject, Resource, Topic } from "../lib/types";
+import { fetchSubjects, fetchTopics, fetchPublishedResources, resourceDownloadUrl } from "../lib/api";
 import {
   BookOpen,
   FileText,
@@ -22,91 +22,27 @@ interface SyllabusExplorerProps {
 }
 
 export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
-  const [subjects, setSubjects] = useState<Subject[]>(FALLBACK_SUBJECTS);
-  const [selectedSubjectId, setSelectedSubjectId] = useState<string>(FALLBACK_SUBJECTS[0].id);
-  const [resources, setResources] = useState<Resource[]>(FALLBACK_RESOURCES);
-  const [activeNoteModal, setActiveNoteModal] = useState<Resource | null>(null);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
 
   useEffect(() => {
     if (exam?.id) {
       fetchSubjects(exam.id).then((loaded) => {
-        if (loaded && loaded.length > 0) {
-          setSubjects(loaded);
-          setSelectedSubjectId(loaded[0].id);
-        }
+        setSubjects(loaded);
+        setSelectedSubjectId((current) => loaded.some((item) => item.id === current) ? current : (loaded[0]?.id || ""));
       });
-      fetchPublishedResources(exam.id).then((res) => {
-        if (res && res.length > 0) {
-          setResources(res);
-        }
-      });
+      fetchPublishedResources(exam.id).then(setResources).catch(() => setResources([]));
     }
   }, [exam?.id]);
 
-  const activeSubject =
-    subjects.find((s) => s.id === selectedSubjectId) || subjects[0] || FALLBACK_SUBJECTS[0];
+  const activeSubject = subjects.find((subject) => subject.id === selectedSubjectId) || null;
 
-  const topicsMap: Record<string, string[]> = {
-    "sub-1": [
-      "Counting Principles, Permutations & Combinations",
-      "Probability Axioms & Sample Spaces",
-      "Conditional Probability & Bayes Theorem",
-      "Discrete Random Variables (Bernoulli, Binomial, Poisson)",
-      "Continuous Random Variables (Uniform, Exponential, Normal/Gaussian)",
-      "Joint Distributions, Marginal Densities & Independence",
-      "Expectation, Variance, Covariance & Correlation Coefficients",
-      "Central Limit Theorem & Chebyshev's Inequality",
-      "Hypothesis Testing, p-values, z-test, t-test & Confidence Intervals",
-    ],
-    "sub-2": [
-      "Vector Spaces, Subspaces & Linear Span",
-      "Linear Independence, Basis & Dimension",
-      "Systems of Linear Equations (Row Echelon Form, Rank-Nullity Theorem)",
-      "Matrices, Determinants, Trace & Inverses",
-      "Eigenvalues, Eigenvectors & Characteristic Equations",
-      "Diagonalization & Cayley-Hamilton Theorem",
-      "Inner Product Spaces & Gram-Schmidt Orthogonalization",
-      "Singular Value Decomposition (SVD) & Geometric Interpretation",
-      "Principal Component Analysis (PCA) & Dimensionality Reduction",
-    ],
-    "sub-3": [
-      "Supervised vs Unsupervised Learning Paradigms",
-      "Linear Regression, Normal Equation & Ordinary Least Squares",
-      "Regularization Techniques (L1 Lasso, L2 Ridge, ElasticNet)",
-      "Logistic Regression & Maximum Likelihood Estimation (MLE)",
-      "Support Vector Machines (Linear & Kernel SVM, Slack Variables)",
-      "Decision Trees (Information Gain, Entropy, Gini Impurity)",
-      "Ensemble Learning (Random Forests, Gradient Boosting, XGBoost)",
-      "K-Means Clustering & Elbow Method",
-      "Hierarchical Clustering & Dendrograms",
-      "Multilayer Perceptrons, Activation Functions & Backpropagation",
-    ],
-    "sub-4": [
-      "Uninformed Search Strategies (BFS, DFS, Uniform Cost Search)",
-      "Informed Heuristic Search (Greedy Best-First, A* Search)",
-      "Heuristic Admissibility & Consistency Criteria",
-      "Adversarial Search & Minimax Algorithm",
-      "Alpha-Beta Pruning Optimization",
-      "Propositional Logic & First-Order Predicate Calculus",
-      "Inference Rules, Resolution & Forward/Backward Chaining",
-    ],
-    "sub-5": [
-      "Python Programming & Complexity Analysis (Big-O, Big-Omega, Big-Theta)",
-      "Linear Data Structures: Arrays, Linked Lists, Stacks, Queues",
-      "Binary Trees & Binary Search Trees (BST Operations)",
-      "Sorting Algorithms (MergeSort, QuickSort, HeapSort)",
-      "Graph Representations & Graph Traversal (BFS, DFS)",
-      "Shortest Path Algorithms (Dijkstra, Bellman-Ford)",
-      "Dynamic Programming Principles (Memoization, Tabulation)",
-    ],
-  };
-
-  const currentTopics = topicsMap[selectedSubjectId] || [
-    "Fundamental Definitions & Core Theorems",
-    "Key Mathematical Formulations & Derivations",
-    "Standard Worked Numerical Problem Types",
-    "Previous Year Competitive Examination Question Drill",
-  ];
+  useEffect(() => {
+    fetchTopics(selectedSubjectId).then(setTopics).catch(() => setTopics([]));
+  }, [selectedSubjectId]);
+  const currentTopics = topics.filter((topic) => topic.is_active);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
@@ -121,7 +57,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             Official Academic Syllabus Explorer
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-            Systematic chapter breakdowns, key formulas, and verified downloadable revision sheets curated strictly according to the latest IISc/IIT examination guidelines.
+            Browse the syllabus topics and study materials published for this examination.
           </p>
         </div>
       </div>
@@ -131,7 +67,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
         <div className="lg:col-span-4 space-y-3">
           <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 px-1 mb-2">
             <span>Disciplines ({subjects.length})</span>
-            <span className="text-[11px] text-blue-600 font-semibold">Verified Scope</span>
+            <span className="text-[11px] text-blue-600 font-semibold">Published subjects</span>
           </div>
 
           <div className="space-y-2">
@@ -182,12 +118,12 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                 Active Discipline Scope
               </span>
               <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
-                {currentTopics.length} Core Modules
+                {currentTopics.length} Topics
               </span>
             </div>
-            <h2 className="text-xl font-bold text-slate-900 mt-2">{activeSubject.name}</h2>
+            <h2 className="text-xl font-bold text-slate-900 mt-2">{activeSubject?.name || "Select a subject"}</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              {activeSubject.description}
+              {activeSubject?.description || "Choose a published subject to view its topics."}
             </p>
           </div>
 
@@ -207,7 +143,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                     <span className="w-6 h-6 rounded-md bg-blue-50 text-blue-800 font-mono font-bold text-[11px] flex items-center justify-center shrink-0">
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <span className="text-slate-800 font-medium">{topic}</span>
+                    <span className="text-slate-800 font-medium">{topic.name}</span>
                   </div>
                 </div>
               ))}
@@ -217,7 +153,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
           {/* Downloadable Study Notes & Revision Sheets */}
           <div className="space-y-3 pt-4">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
-              Verified Study Notes &amp; Formula Sheets
+              Published Study Materials
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -242,13 +178,10 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                     <span className="text-[10px] uppercase font-bold text-slate-400">
                       PDF Document
                     </span>
-                    <button
-                      onClick={() => setActiveNoteModal(res)}
-                      className="text-xs text-blue-600 font-bold hover:text-blue-800 flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Read Summary</span>
+                    <a href={resourceDownloadUrl(res.id)} className="text-xs text-blue-600 font-bold hover:text-blue-800 flex items-center gap-1">
+                      <span>Download material</span>
                       <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
+                    </a>
                   </div>
                 </div>
               ))}
@@ -257,34 +190,6 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
         </div>
       </div>
 
-      {/* Note Reader Modal */}
-      {activeNoteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl p-6 relative">
-            <h3 className="text-base font-bold text-slate-900 mb-1">{activeNoteModal.title}</h3>
-            <div className="text-xs text-slate-500 mb-4">{activeNoteModal.description}</div>
-
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5 text-xs text-slate-700 leading-relaxed max-h-64 overflow-y-auto">
-              <div className="font-semibold text-slate-900">Key Conceptual Derivations &amp; Formulas:</div>
-              <ul className="list-disc pl-4 space-y-1.5 text-slate-600">
-                <li>Formal mathematical definitions and core axioms adhering strictly to the official syllabus.</li>
-                <li>Worked example problems illustrating frequent competitive examination traps and boundary cases.</li>
-                <li>Formulas for quick numerical calculations matching the virtual scientific calculator precision.</li>
-                <li>Step-by-step proofs for essential lemmas and dimensionality reduction techniques.</li>
-              </ul>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => setActiveNoteModal(null)}
-                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer transition-colors"
-              >
-                Close Preview
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

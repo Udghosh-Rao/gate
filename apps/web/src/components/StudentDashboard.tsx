@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { User, Result } from "../lib/types";
+import { User, Result, StudentAttemptSummary } from "../lib/types";
 import { fetchStudentAttemptsList } from "../lib/api";
 import {
   Clock,
@@ -33,12 +33,11 @@ export function StudentDashboard({
   onLaunchMockTest,
   onOpenAuth,
 }: StudentDashboardProps) {
-  const [attempts, setAttempts] = useState<any[]>([]);
+  const [attempts, setAttempts] = useState<StudentAttemptSummary[]>([]);
   const [isLoadingAttempts, setIsLoadingAttempts] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
-      setIsLoadingAttempts(true);
       fetchStudentAttemptsList()
         .then((data) => setAttempts(data || []))
         .catch(() => setAttempts([]))
@@ -239,7 +238,7 @@ export function StudentDashboard({
                     </span>
                   </div>
                   <div className="text-xs text-slate-500 mt-1 flex items-center gap-3">
-                    <span>Date: {new Date(att.started_at).toLocaleDateString()}</span>
+                    <span>Date: {att.started_at ? new Date(att.started_at).toLocaleDateString() : "—"}</span>
                     <span>•</span>
                     <span>Score: {att.score !== null ? `${att.score} Marks` : "Pending"}</span>
                   </div>

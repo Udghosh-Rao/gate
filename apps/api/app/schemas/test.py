@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # --- Question ---
@@ -195,6 +195,21 @@ class AnswerSaveRequest(BaseModel):
     numerical_answer: Optional[float] = None
     is_marked_for_review: bool = False
     time_spent_seconds: int = 0
+
+    @field_validator("selected_option_ids")
+    @classmethod
+    def reject_duplicate_options(cls, value: Optional[List[UUID]]) -> Optional[List[UUID]]:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Selected options must not contain duplicates")
+        return value
+
+    @model_validator(mode="after")
+    def validate_answer_shape(self):
+        if self.time_spent_seconds < 0:
+            raise ValueError("Time spent must not be negative")
+        if self.numerical_answer is not None and self.selected_option_ids:
+            raise ValueError("Select options or provide a numerical answer, not both")
+        return self
 
 
 class AnswerSaveResponse(BaseModel):

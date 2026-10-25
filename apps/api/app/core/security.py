@@ -4,16 +4,20 @@ from typing import Optional, Dict
 
 import bcrypt
 import jwt
+from redis import Redis
 
 from app.core.config import settings
 
 # In-memory revocation set mapping jti or token hash -> expiry timestamp
 _REVOKED_TOKENS: Dict[str, datetime] = {}
+_revocation_store = Redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
 def hash_password(password: str) -> str:
     """Hash a plaintext password using bcrypt directly."""
-    pwd_bytes = password.encode("utf-8")[:72]
+    pwd_bytes = password.encode("utf-8")
+    if len(pwd_bytes) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes")
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
@@ -21,7 +25,9 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against its bcrypt hash."""
     try:
-        pwd_bytes = plain_password.encode("utf-8")[:72]
+        pwd_bytes = plain_password.encode("utf-8")
+        if len(pwd_bytes) > 72:
+            return False
         return bcrypt.checkpw(pwd_bytes, hashed_password.encode("utf-8"))
     except Exception:
         return False
@@ -70,6 +76,8 @@ def decode_token(token: str) -> dict:
         settings.JWT_SECRET_KEY,
         algorithms=[settings.JWT_ALGORITHM],
     )
+    if payload.get("type") not in {"access", "refresh"}:
+        raise jwt.InvalidTokenError("Invalid token purpose")
     jti = payload.get("jti")
     if jti and is_token_revoked(jti):
         raise jwt.InvalidTokenError("Token has been revoked")
@@ -89,14 +97,22 @@ def revoke_token(token: str) -> None:
         jti = payload.get("jti") or token
         exp = payload.get("exp")
         exp_dt = datetime.fromtimestamp(exp, timezone.utc) if exp else datetime.now(timezone.utc) + timedelta(days=7)
-        _REVOKED_TOKENS[jti] = exp_dt
+        if settings.is_production:
+            ttl = max(1, int((exp_dt - datetime.now(timezone.utc)).total_seconds()))
+            _revocation_store.setex(f"exam-platform:revoked:{jti}", ttl, "1")
+        else:
+            _REVOKED_TOKENS[jti] = exp_dt
     except Exception:
+        if settings.is_production:
+            raise RuntimeError("Token revocation storage is unavailable")
         # Fallback using token string itself
         _REVOKED_TOKENS[token] = datetime.now(timezone.utc) + timedelta(days=7)
 
 
 def is_token_revoked(token_or_jti: str) -> bool:
     """Check if token or jti is in the revocation store."""
+    if settings.is_production:
+        return bool(_revocation_store.exists(f"exam-platform:revoked:{token_or_jti}"))
     now = datetime.now(timezone.utc)
     # Lazy cleanup of expired entries
     expired_keys = [k for k, exp in _REVOKED_TOKENS.items() if exp < now]

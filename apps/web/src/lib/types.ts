@@ -1,5 +1,6 @@
 export type UserRole = "ADMIN" | "STUDENT" | "CONTENT_MANAGER";
 export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export interface User {
   id: string;
@@ -22,7 +23,7 @@ export interface Exam {
   default_duration_seconds: number;
   default_total_marks: number;
   instructions?: string | null;
-  config?: Record<string, any> | null;
+  config?: Record<string, JsonValue> | null;
 }
 
 export interface Subject {
@@ -179,12 +180,22 @@ export interface Result {
   accuracy_percentage: number;
   percentage_score: number;
   time_taken_seconds: number;
-  section_wise_scores?: Record<string, any> | null;
-  subject_wise_scores?: Record<string, any> | null;
-  topic_wise_scores?: Record<string, any> | null;
+  section_wise_scores?: Record<string, JsonValue> | null;
+  subject_wise_scores?: Record<string, JsonValue> | null;
+  topic_wise_scores?: Record<string, JsonValue> | null;
   question_results?: QuestionResultDetail[] | null;
   is_released: boolean;
   evaluated_at: string;
+}
+
+export interface StudentAttemptSummary {
+  id: string;
+  test_id: string;
+  status: string;
+  started_at: string | null;
+  submitted_at: string | null;
+  score: number | null;
+  accuracy_percentage: number | null;
 }
 
 export interface AdminDashboardMetrics {

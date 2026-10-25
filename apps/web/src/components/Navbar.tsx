@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { User, Exam } from "../lib/types";
 import { BRAND } from "../lib/brand";
-import { apiLogout, apiLogin, SEED_CREDENTIALS } from "../lib/api";
+import { apiLogout } from "../lib/api";
 import {
   BookOpen,
   Award,
@@ -30,8 +30,8 @@ interface NavbarProps {
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
   exams: Exam[];
-  selectedExam: Exam;
-  setSelectedExam: (exam: Exam) => void;
+  selectedExam: Exam | null;
+  setSelectedExam: React.Dispatch<React.SetStateAction<Exam | null>>;
   onLaunchMockTest: () => void;
   onOpenAuth: (mode?: "login" | "register") => void;
 }
@@ -78,19 +78,6 @@ export function Navbar({
     }
   };
 
-  const handleSwitchToSeedAccount = async (key: "admin" | "student") => {
-    setIsSwitching(true);
-    try {
-      const creds = SEED_CREDENTIALS[key];
-      const { user } = await apiLogin(creds.email, creds.password);
-      setCurrentUser(user);
-      setShowUserMenu(false);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsSwitching(false);
-    }
-  };
 
   const handleNavClick = (tab: string) => {
     setCurrentTab(tab);
@@ -136,7 +123,7 @@ export function Navbar({
               className="flex items-center gap-2 px-2.5 py-1 text-xs font-semibold rounded-md bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-700 transition-colors"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              <span>{selectedExam?.code || "GATE-DA"}</span>
+              <span>{selectedExam?.code || "Select exam"}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
@@ -279,30 +266,6 @@ export function Navbar({
                         <span>Admin Content Manager</span>
                       </button>
                     )}
-                  </div>
-
-                  {/* Account Switcher for pair testing */}
-                  <div className="mt-2 pt-2 border-t border-slate-100">
-                    <div className="text-[10px] font-semibold text-slate-400 px-3 py-1 uppercase tracking-wider flex items-center gap-1">
-                      <KeyRound className="w-3 h-3 text-slate-400" />
-                      Switch Account
-                    </div>
-                    <button
-                      onClick={() => handleSwitchToSeedAccount("student")}
-                      disabled={isSwitching}
-                      className="w-full text-left px-3 py-1.5 rounded-md text-xs text-slate-600 hover:bg-slate-50 flex items-center justify-between"
-                    >
-                      <span className="text-[11px]">Candidate (Student)</span>
-                      {currentUser.role === "STUDENT" && <Check className="w-3 h-3 text-blue-600" />}
-                    </button>
-                    <button
-                      onClick={() => handleSwitchToSeedAccount("admin")}
-                      disabled={isSwitching}
-                      className="w-full text-left px-3 py-1.5 rounded-md text-xs text-slate-600 hover:bg-slate-50 flex items-center justify-between"
-                    >
-                      <span className="text-[11px]">Platform Administrator</span>
-                      {currentUser.role === "ADMIN" && <Check className="w-3 h-3 text-blue-600" />}
-                    </button>
                   </div>
 
                   {/* Sign Out */}

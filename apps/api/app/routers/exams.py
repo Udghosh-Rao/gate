@@ -2,16 +2,20 @@
 
 import os
 import uuid as _uuid
+from pathlib import Path
 from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin, require_admin_or_content_manager
 from app.models.user import User, UserRole
+from app.models.exam import Resource
 from app.schemas.exam import (
     ExamCreateRequest, ExamUpdateRequest, ExamResponse,
     SubjectCreateRequest, SubjectResponse,
@@ -237,13 +241,7 @@ async def delete_resource(
 
 
 # Allowed MIME types for study material uploads
-_ALLOWED_UPLOAD_MIME_TYPES = {
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "text/plain",
-}
+_ALLOWED_UPLOAD_MIME_TYPES = {"application/pdf"}
 
 _MAX_UPLOAD_BYTES = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
@@ -267,13 +265,15 @@ async def upload_study_material(
     Files are stored in the configured UPLOAD_DIR and a Resource record is created
     pointing to the server-hosted URL. Maximum file size is MAX_UPLOAD_SIZE_MB.
     """
+    if settings.is_production:
+        raise HTTPException(status_code=503, detail="Managed object storage is not configured")
     content_type = file.content_type or "application/octet-stream"
     if content_type not in _ALLOWED_UPLOAD_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
                 f"File type '{content_type}' is not permitted. "
-                "Allowed types: PDF, PNG, JPEG, GIF, plain text."
+                "Only PDF files are supported."
             ),
         )
 
@@ -285,10 +285,11 @@ async def upload_study_material(
             detail=f"File exceeds the maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
         )
 
+    if not (file.filename or "").lower().endswith(".pdf") or not contents.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF")
+
     # Build a safe filename: <uuid>_<original_filename>
-    safe_name = f"{_uuid.uuid4()}_{file.filename or 'file'}"
-    # Sanitise: keep only alphanumeric, dot, dash, underscore
-    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in safe_name)
+    safe_name = f"{_uuid.uuid4()}.pdf"
     dest_path = os.path.join(settings.UPLOAD_DIR, safe_name)
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -309,7 +310,32 @@ async def upload_study_material(
         is_published=False,  # Admin must explicitly publish
     )
     service = ExamService(db)
-    return await service.create_resource(
+    resource = await service.create_resource(
         exam_id=exam_id, data=resource_data, uploaded_by=current_user.id
     )
+    resource_record = await db.execute(select(Resource).where(Resource.id == resource.id))
+    resource_row = resource_record.scalar_one()
+    resource_row.resource_type = "pdf"
+    await db.flush()
+    return resource_row
+
+
+@router.get("/resources/{resource_id}/download")
+async def download_resource(
+    resource_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    row_result = await db.execute(select(Resource).where(Resource.id == resource_id))
+    resource = row_result.scalar_one_or_none()
+    if resource is None or not resource.file_url:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if not resource.is_published:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    storage_key = Path(resource.file_url).name
+    if storage_key in {"", ".", ".."}:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    path = (Path(settings.UPLOAD_DIR) / storage_key).resolve()
+    if path.parent != Path(settings.UPLOAD_DIR).resolve() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Resource file not found")
+    return FileResponse(path, media_type="application/pdf", filename=f"{resource.title}.pdf")
 

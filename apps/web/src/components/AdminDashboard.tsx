@@ -4,17 +4,17 @@ import React, { useState, useEffect } from "react";
 import { Exam, Question, Test, Resource, User } from "../lib/types";
 import {
   apiCreateExam,
-  apiCreateResource,
+  apiUploadStudyMaterial,
   apiDeleteResource,
   apiUpdateResource,
   fetchAdminResources,
   apiCreateQuestion,
+  QuestionCreatePayload,
   fetchAdminQuestions,
   apiCreateTest,
   apiPublishTest,
   fetchTests,
   apiFetchAdminMetrics,
-  FALLBACK_TESTS,
 } from "../lib/api";
 import {
   ShieldCheck,
@@ -63,11 +63,7 @@ export function AdminDashboard({
     exams[0]?.id || ""
   );
 
-  useEffect(() => {
-    if (exams.length > 0 && !activeExamId) {
-      setActiveExamId(exams[0].id);
-    }
-  }, [exams, activeExamId]);
+  const selectedAdminExamId = activeExamId || exams[0]?.id || "";
 
   // Metrics
   const [metrics, setMetrics] = useState<{
@@ -77,20 +73,20 @@ export function AdminDashboard({
     total_attempts: number;
     total_users: number;
   }>({
-    total_exams: exams.length,
-    total_tests: 1,
-    total_questions: 5,
+    total_exams: 0,
+    total_tests: 0,
     total_attempts: 0,
-    total_users: 2,
+    total_questions: 0,
+    total_users: 0,
   });
 
   useEffect(() => {
     apiFetchAdminMetrics().then((res) => {
       if (res) {
         setMetrics({
-          total_exams: res.total_exams || exams.length,
-          total_tests: res.total_tests || 1,
-          total_questions: res.total_questions || 5,
+          total_exams: res.total_exams,
+          total_tests: res.total_tests,
+          total_questions: res.total_questions,
           total_attempts: res.total_attempts || 0,
           total_users: res.total_users || 2,
         });
@@ -113,9 +109,8 @@ export function AdminDashboard({
   const [showAddResourceModal, setShowAddResourceModal] = useState(false);
   const [resourceTitle, setResourceTitle] = useState("");
   const [resourceDesc, setResourceDesc] = useState("");
-  const [resourceType, setResourceType] = useState("notes");
-  const [resourceFileUrl, setResourceFileUrl] = useState("");
-  const [resourceIsPublished, setResourceIsPublished] = useState(true);
+  const [resourceFile, setResourceFile] = useState<File | null>(null);
+  const [resourceError, setResourceError] = useState<string | null>(null);
 
   const loadResources = async (examId: string) => {
     if (!examId) return;
@@ -131,10 +126,10 @@ export function AdminDashboard({
   };
 
   useEffect(() => {
-    if (activeTab === "resources" && activeExamId) {
-      loadResources(activeExamId);
+    if (activeTab === "resources" && selectedAdminExamId) {
+      void Promise.resolve().then(() => loadResources(selectedAdminExamId));
     }
-  }, [activeTab, activeExamId]);
+  }, [activeTab, selectedAdminExamId]);
 
   // --- 3. Questions Bank State ---
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -170,10 +165,10 @@ export function AdminDashboard({
   };
 
   useEffect(() => {
-    if (activeTab === "questions" && activeExamId) {
-      loadQuestions(activeExamId);
+    if (activeTab === "questions" && selectedAdminExamId) {
+      void Promise.resolve().then(() => loadQuestions(selectedAdminExamId));
     }
-  }, [activeTab, activeExamId]);
+  }, [activeTab, selectedAdminExamId]);
 
   // --- 4. Tests State ---
   const [tests, setTests] = useState<Test[]>([]);
@@ -193,17 +188,17 @@ export function AdminDashboard({
       const data = await fetchTests(examId);
       setTests(data);
     } catch {
-      setTests(FALLBACK_TESTS);
+      setTests([]);
     } finally {
       setIsLoadingTests(false);
     }
   };
 
   useEffect(() => {
-    if (activeTab === "tests" && activeExamId) {
-      loadTests(activeExamId);
+    if (activeTab === "tests" && selectedAdminExamId) {
+      void Promise.resolve().then(() => loadTests(selectedAdminExamId));
     }
-  }, [activeTab, activeExamId]);
+  }, [activeTab, selectedAdminExamId]);
 
   // Unauthorized Guard
   if (!isAuthorized) {
@@ -240,7 +235,7 @@ export function AdminDashboard({
       code: examCode.trim().toUpperCase(),
       slug: examCode.trim().toLowerCase().replace(/[^a-z0-9]/g, "-"),
       description: examDesc.trim() || `${examName} examination track.`,
-      status: "ACTIVE",
+      status: "DRAFT",
       default_duration_seconds: parseInt(examDuration) || 10800,
       default_total_marks: parseFloat(examMarks) || 100.0,
       instructions:
@@ -248,18 +243,7 @@ export function AdminDashboard({
         "Standard competitive computer-based examination guidelines apply.",
     };
 
-    const created = await apiCreateExam(examPayload);
-    const newExam: Exam = (created as Exam) || {
-      id: "exam-" + Date.now(),
-      name: examPayload.name!,
-      code: examPayload.code!,
-      slug: examPayload.slug!,
-      description: examPayload.description,
-      status: "ACTIVE",
-      default_duration_seconds: examPayload.default_duration_seconds!,
-      default_total_marks: examPayload.default_total_marks!,
-      instructions: examPayload.instructions,
-    };
+    const newExam = await apiCreateExam({ ...examPayload, status: "DRAFT" });
 
     onAddExam(newExam);
     setShowAddExamModal(false);
@@ -271,21 +255,23 @@ export function AdminDashboard({
 
   const handleCreateResource = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!resourceTitle || !activeExamId) return;
+    setResourceError(null);
+    if (!resourceTitle || !activeExamId || !resourceFile) {
+      setResourceError("Choose a PDF file and provide its title.");
+      return;
+    }
 
-    await apiCreateResource(activeExamId, {
-      title: resourceTitle.trim(),
-      description: resourceDesc.trim() || undefined,
-      resource_type: resourceType,
-      file_url: resourceFileUrl.trim() || "#",
-      mime_type: "application/pdf",
-      is_published: resourceIsPublished,
-    });
+    try {
+      await apiUploadStudyMaterial(activeExamId, resourceFile, resourceTitle.trim(), resourceDesc.trim() || undefined);
+    } catch (error) {
+      setResourceError(error instanceof Error ? error.message : "PDF upload failed.");
+      return;
+    }
 
     setShowAddResourceModal(false);
     setResourceTitle("");
     setResourceDesc("");
-    setResourceFileUrl("");
+    setResourceFile(null);
     loadResources(activeExamId);
   };
 
@@ -330,7 +316,7 @@ export function AdminDashboard({
     }
 
     try {
-      const payload: any = {
+      const payload: QuestionCreatePayload = {
         exam_id: activeExamId,
         question_type: qType,
         difficulty: qDifficulty,
@@ -339,6 +325,7 @@ export function AdminDashboard({
         negative_marks: qType === "MCQ" ? parseFloat(qNegativeMarks) || 0.66 : 0.0,
         explanation: qExplanation.trim() || undefined,
         partial_credit: false,
+        options: [],
       };
 
       if (qType === "NAT") {
@@ -368,8 +355,8 @@ export function AdminDashboard({
         { label: "D", text: "", is_correct: false },
       ]);
       loadQuestions(activeExamId);
-    } catch (err: any) {
-      setQError(err.message || "Failed to create question");
+    } catch (err: unknown) {
+      setQError(err instanceof Error ? err.message : "Failed to create question");
     }
   };
 
@@ -385,8 +372,8 @@ export function AdminDashboard({
         instructions: testInstructions.trim() || "Authentic CBT test rules apply.",
         duration_seconds: parseInt(testDuration) || 10800,
         total_marks: parseFloat(testMarks) || 100.0,
-        result_release_policy: "IMMEDIATE",
-        explanation_release_policy: "WITH_RESULT",
+        result_release_policy: "IMMEDIATE" as const,
+        explanation_release_policy: "WITH_RESULT" as const,
         is_retakeable: true,
         questions: selectedQuestionIds.map((qid, idx) => ({
           question_id: qid,
@@ -407,8 +394,8 @@ export function AdminDashboard({
       setTestDesc("");
       setSelectedQuestionIds([]);
       loadTests(activeExamId);
-    } catch (err: any) {
-      alert(err.message || "Failed to create test");
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to create test");
     }
   };
 
@@ -462,7 +449,7 @@ export function AdminDashboard({
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
                 isActive
                   ? "bg-slate-900 text-white font-semibold"
@@ -919,29 +906,16 @@ export function AdminDashboard({
               </div>
 
               <div>
-                <label className="font-medium text-slate-700 block mb-1">Resource Type</label>
-                <select
-                  value={resourceType}
-                  onChange={(e) => setResourceType(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600"
-                >
-                  <option value="notes">Lecture Notes / Summary (PDF)</option>
-                  <option value="formula_sheet">Formula Cheat Sheet</option>
-                  <option value="syllabus">Official Syllabus Document</option>
-                  <option value="question_set">Practice Question Bank PDF</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-medium text-slate-700 block mb-1">File URL / Download Link</label>
+                <label className="font-medium text-slate-700 block mb-1">PDF file *</label>
                 <input
-                  type="text"
-                  placeholder="https://... or /uploads/linear-algebra-notes.pdf"
-                  value={resourceFileUrl}
-                  onChange={(e) => setResourceFileUrl(e.target.value)}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  required
+                  onChange={(e) => setResourceFile(e.target.files?.[0] || null)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600"
                 />
               </div>
+              {resourceError && <p role="alert" className="text-red-700">{resourceError}</p>}
 
               <div>
                 <label className="font-medium text-slate-700 block mb-1">Description / Topic Scope</label>
@@ -954,18 +928,7 @@ export function AdminDashboard({
                 />
               </div>
 
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="pub-check"
-                  checked={resourceIsPublished}
-                  onChange={(e) => setResourceIsPublished(e.target.checked)}
-                  className="rounded border-slate-300"
-                />
-                <label htmlFor="pub-check" className="font-medium text-slate-700">
-                  Publish immediately (visible to students)
-                </label>
-              </div>
+              <p className="text-slate-500">New uploads start unpublished. You can review and publish them from the materials list.</p>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
@@ -1009,7 +972,7 @@ export function AdminDashboard({
                   <label className="font-medium text-slate-700 block mb-1">Question Type</label>
                   <select
                     value={qType}
-                    onChange={(e) => setQType(e.target.value as any)}
+                    onChange={(e) => setQType(e.target.value as "MCQ" | "MSQ" | "NAT")}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600"
                   >
                     <option value="MCQ">MCQ (Multiple Choice — Single Correct)</option>
@@ -1021,7 +984,7 @@ export function AdminDashboard({
                   <label className="font-medium text-slate-700 block mb-1">Difficulty</label>
                   <select
                     value={qDifficulty}
-                    onChange={(e) => setQDifficulty(e.target.value as any)}
+                    onChange={(e) => setQDifficulty(e.target.value as "EASY" | "MEDIUM" | "HARD")}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:border-blue-600"
                   >
                     <option value="EASY">Easy</option>

@@ -11,31 +11,11 @@ import {
   AttemptAnswer,
   Result,
   AdminDashboardMetrics,
+  StudentAttemptSummary,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-
-// Real seeded accounts for quick credential autofill / live authentication
-export const SEED_CREDENTIALS = {
-  admin: {
-    email: "admin@examplatform.dev",
-    password: "Admin@Dev123",
-    label: "Platform Administrator",
-    role: "ADMIN" as const,
-  },
-  student: {
-    email: "student@examplatform.dev",
-    password: "Student@Dev123",
-    label: "Candidate (Student)",
-    role: "STUDENT" as const,
-  },
-  content_manager: {
-    email: "content@examplatform.dev",
-    password: "Content@Dev123",
-    label: "Dr. Priya Nair (Content Lead)",
-    role: "CONTENT_MANAGER" as const,
-  },
-};
+export const resourceDownloadUrl = (resourceId: string) => `${API_BASE}/resources/${resourceId}/download`;
 
 // Local Storage Auth & Token Management
 export function getStoredUser(): User | null {
@@ -138,7 +118,7 @@ export async function apiRegister(
       typeof errorData.detail === "string"
         ? errorData.detail
         : Array.isArray(errorData.detail)
-        ? errorData.detail.map((d: any) => d.msg).join(", ")
+        ? errorData.detail.map((d: { msg?: string }) => d.msg || "Invalid input").join(", ")
         : "Registration failed. Password must be >=8 chars and contain uppercase, lowercase & digits.";
     throw new Error(message);
   }
@@ -163,7 +143,7 @@ export async function apiGetMe(): Promise<User | null> {
     setStoredUser(user);
     return user;
   } catch {
-    return getStoredUser();
+    return null;
   }
 }
 
@@ -185,14 +165,11 @@ export async function apiLogout(): Promise<void> {
 
 // API client functions
 export async function fetchExams(): Promise<Exam[]> {
-  try {
-    const res = await fetch(`${API_BASE}/exams`, { cache: "no-store" });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${API_BASE}/exams`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Unable to load examinations (${res.status})`);
+  const data: unknown = await res.json();
+  if (!Array.isArray(data)) throw new Error("Invalid examination response");
+  return data as Exam[];
 }
 
 export async function fetchExamBySlug(slug: string): Promise<Exam | undefined> {
@@ -207,26 +184,29 @@ export async function fetchExamBySlug(slug: string): Promise<Exam | undefined> {
 
 export async function fetchSubjects(examId: string): Promise<Subject[]> {
   if (!examId) return [];
-  try {
-    const res = await fetch(`${API_BASE}/exams/${examId}/subjects`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${API_BASE}/exams/${examId}/subjects`);
+  if (!res.ok) throw new Error(`Unable to load subjects (${res.status})`);
+  const data: unknown = await res.json();
+  if (!Array.isArray(data)) throw new Error("Invalid subject response");
+  return data as Subject[];
+}
+
+export async function fetchTopics(subjectId: string): Promise<Topic[]> {
+  if (!subjectId) return [];
+  const res = await fetch(`${API_BASE}/subjects/${subjectId}/topics`);
+  if (!res.ok) throw new Error(`Unable to load syllabus topics (${res.status})`);
+  const data: unknown = await res.json();
+  if (!Array.isArray(data)) throw new Error("Invalid topic response");
+  return data as Topic[];
 }
 
 export async function fetchTests(examId: string): Promise<Test[]> {
   if (!examId) return [];
-  try {
-    const res = await fetch(`${API_BASE}/exams/${examId}/tests`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${API_BASE}/exams/${examId}/tests`);
+  if (!res.ok) throw new Error(`Unable to load tests (${res.status})`);
+  const data: unknown = await res.json();
+  if (!Array.isArray(data)) throw new Error("Invalid test response");
+  return data as Test[];
 }
 
 export async function fetchTestById(testId: string): Promise<Test | undefined> {
@@ -354,7 +334,7 @@ export async function submitAttempt(
 
 
 
-export async function apiCreateExam(examData: Partial<Exam>, token?: string): Promise<Exam | null> {
+export async function apiCreateExam(examData: Partial<Exam>, token?: string): Promise<Exam> {
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -363,10 +343,13 @@ export async function apiCreateExam(examData: Partial<Exam>, token?: string): Pr
       headers,
       body: JSON.stringify(examData),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || `Unable to create examination (${res.status})`);
+    }
     return await res.json();
-  } catch {
-    return null;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error("Unable to create examination");
   }
 }
 
@@ -384,15 +367,11 @@ export async function apiFetchAdminMetrics(token?: string): Promise<AdminDashboa
 
 // Resource / Study Material Management
 export async function fetchPublishedResources(examId: string, topicId?: string): Promise<Resource[]> {
-  try {
-    let url = `${API_BASE}/exams/${examId}/resources`;
-    if (topicId) url += `?topic_id=${topicId}`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
-  }
+  let url = `${API_BASE}/exams/${examId}/resources`;
+  if (topicId) url += `?topic_id=${topicId}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Unable to load study materials (${res.status})`);
+  return await res.json();
 }
 
 export async function fetchAdminResources(examId: string, token?: string): Promise<Resource[]> {
@@ -503,7 +482,40 @@ export async function fetchAdminQuestions(examId: string, token?: string): Promi
   }
 }
 
-export async function apiCreateQuestion(data: any, token?: string): Promise<Question | null> {
+export interface QuestionCreatePayload {
+  exam_id: string;
+  subject_id?: string | null;
+  topic_id?: string | null;
+  question_type: Question["question_type"];
+  difficulty: Question["difficulty"];
+  text: string;
+  image_url?: string | null;
+  explanation?: string;
+  positive_marks: number;
+  negative_marks: number;
+  correct_numerical_answer?: number;
+  numerical_tolerance?: number;
+  partial_credit: boolean;
+  options: { label: string; text: string; image_url?: string; is_correct: boolean; display_order: number }[];
+}
+export interface TestCreatePayload {
+  test_series_id?: string | null;
+  title: string;
+  slug: string;
+  description?: string;
+  instructions?: string;
+  duration_seconds: number;
+  total_marks: number;
+  result_release_policy: Test["result_release_policy"];
+  explanation_release_policy: Test["explanation_release_policy"];
+  is_retakeable: boolean;
+  max_attempts?: number | null;
+  marking_scheme?: Record<string, string | number | boolean> | null;
+  display_order?: number;
+  questions: { question_id: string; question_number: number; section_id?: string; positive_marks?: number; negative_marks?: number }[];
+}
+
+export async function apiCreateQuestion(data: QuestionCreatePayload, token?: string): Promise<Question> {
   const authToken = token || getAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
@@ -520,7 +532,7 @@ export async function apiCreateQuestion(data: any, token?: string): Promise<Ques
 }
 
 // Test Creation & Management
-export async function apiCreateTest(examId: string, data: any, token?: string): Promise<Test | null> {
+export async function apiCreateTest(examId: string, data: TestCreatePayload, token?: string): Promise<Test> {
   const authToken = token || getAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
@@ -553,7 +565,7 @@ export async function apiPublishTest(testId: string, token?: string): Promise<Te
 }
 
 // Student Attempt History
-export async function fetchStudentAttemptsList(token?: string): Promise<any[]> {
+export async function fetchStudentAttemptsList(token?: string): Promise<StudentAttemptSummary[]> {
   try {
     const authToken = token || getAuthToken();
     if (!authToken) return [];

@@ -18,6 +18,8 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
         if not any(c.isupper() for c in v):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.islower() for c in v):
@@ -69,6 +71,13 @@ class AdminUserCreateRequest(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=255)
     role: str = Field(..., pattern="^(ADMIN|STUDENT|CONTENT_MANAGER)$")
     phone: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class AdminUserUpdateRequest(BaseModel):

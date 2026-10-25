@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.question import Question, QuestionOption, QuestionType
 from app.models.test import (
@@ -17,6 +18,7 @@ from app.models.test import (
     Attempt, AttemptAnswer, Result,
     TestStatus, TestSeriesStatus, AttemptStatus,
     ResultReleasePolicy,
+    ExplanationReleasePolicy,
 )
 from app.schemas.test import (
     TestCreateRequest, TestResponse, TestSeriesCreateRequest, TestSeriesResponse,
@@ -33,6 +35,29 @@ def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
+
+
+def can_release_result(test: Test, result: Result) -> bool:
+    if test.result_release_policy == ResultReleasePolicy.IMMEDIATE:
+        return True
+    if test.result_release_policy == ResultReleasePolicy.AFTER_DEADLINE:
+        release_at = ensure_utc(test.result_release_at)
+        return bool(release_at and release_at <= datetime.now(timezone.utc))
+    return result.is_released
+
+
+def can_release_explanations(test: Test, result: Result) -> bool:
+    policy = test.explanation_release_policy
+    if policy == ExplanationReleasePolicy.NEVER:
+        return False
+    if policy == ExplanationReleasePolicy.WITH_RESULT:
+        return can_release_result(test, result)
+    if policy == ExplanationReleasePolicy.AFTER_DEADLINE:
+        release_at = ensure_utc(test.result_release_at)
+        return bool(release_at and release_at <= datetime.now(timezone.utc))
+    # This schema has no independent explanation-approval flag. Fail closed for
+    # MANUAL rather than coupling it to the result release bit.
+    return False
 
 
 class TestService:
@@ -347,6 +372,21 @@ class AttemptService:
         if not tq_result.scalar_one_or_none():
             raise ValueError("Question does not belong to this test")
 
+        q_result = await self.db.execute(select(Question).where(Question.id == question_id))
+        question = q_result.scalar_one()
+        selected_ids = data.selected_option_ids or []
+        if question.question_type == QuestionType.NAT:
+            if selected_ids:
+                raise ValueError("Numerical questions do not accept option selections")
+        else:
+            if data.numerical_answer is not None:
+                raise ValueError("Choice questions do not accept numerical answers")
+            if question.question_type == QuestionType.MCQ and len(selected_ids) > 1:
+                raise ValueError("MCQ accepts at most one selected option")
+            valid_ids = {option.id for option in question.options}
+            if any(option_id not in valid_ids for option_id in selected_ids):
+                raise ValueError("Selected option does not belong to this question")
+
         # Upsert the answer
         existing = await self.db.execute(
             select(AttemptAnswer).where(
@@ -393,7 +433,7 @@ class AttemptService:
         """
         # Load attempt with ownership check but allow already-finalized state
         result = await self.db.execute(
-            select(Attempt).where(Attempt.id == attempt_id)
+            select(Attempt).where(Attempt.id == attempt_id).with_for_update()
         )
         attempt = result.scalar_one_or_none()
         if not attempt:
@@ -414,8 +454,9 @@ class AttemptService:
             raise ValueError(f"Cannot submit an attempt with status: {attempt.status.value}")
 
         now = datetime.now(timezone.utc)
-        attempt.status = AttemptStatus.SUBMITTED
-        attempt.submitted_at = now
+        expired = bool(attempt.expires_at and ensure_utc(attempt.expires_at) <= now)
+        attempt.status = AttemptStatus.EXPIRED if expired else AttemptStatus.SUBMITTED
+        attempt.submitted_at = ensure_utc(attempt.expires_at) if expired else now
         attempt.submission_key = f"{attempt_id}-{now.timestamp()}"
         await self.db.flush()
         await self.db.refresh(attempt)
@@ -437,7 +478,7 @@ class AttemptService:
         rolled back by the caller's exception handler discarding the transaction.
         """
         result = await self.db.execute(
-            select(Attempt).where(Attempt.id == attempt_id)
+            select(Attempt).where(Attempt.id == attempt_id).with_for_update()
         )
         attempt = result.scalar_one_or_none()
         if not attempt:
@@ -470,6 +511,7 @@ class AttemptService:
         self, student_id: UUID, test_id: Optional[UUID] = None
     ) -> list:
         query = select(Attempt).where(Attempt.student_id == student_id)
+        query = query.options(selectinload(Attempt.result), selectinload(Attempt.test))
         if test_id:
             query = query.where(Attempt.test_id == test_id)
         query = query.order_by(Attempt.created_at.desc())
@@ -558,11 +600,8 @@ class ScoringService:
                     is_correct=None,
                     marks_awarded=0,
                     explanation=q.explanation,
-                ).model_dump())
+                ).model_dump(mode="json"))
                 continue
-
-            if answer:
-                time_taken += answer.time_spent_seconds
 
             is_correct, marks = self._evaluate_question(q, answer, pos_marks, neg_marks)
             total_score += marks
@@ -590,10 +629,12 @@ class ScoringService:
         accuracy = (correct_count / answered * 100) if answered > 0 else 0.0
         percentage = (total_score / max_possible * 100) if max_possible > 0 else 0.0
 
-        # Calculate time taken from timestamps if not available from per-question tracking
-        if time_taken == 0 and attempt.started_at:
+        # Time reported by the browser is advisory only; derive it from server timestamps.
+        if attempt.started_at:
             end_time = attempt.submitted_at or datetime.now(timezone.utc)
-            time_taken = int((ensure_utc(end_time) - ensure_utc(attempt.started_at)).total_seconds())
+            if attempt.expires_at:
+                end_time = min(ensure_utc(end_time), ensure_utc(attempt.expires_at))
+            time_taken = max(0, int((ensure_utc(end_time) - ensure_utc(attempt.started_at)).total_seconds()))
 
         # Determine result visibility from the test's configured release policy.
         # IMMEDIATE → release straight away; anything else → hold for admin release.

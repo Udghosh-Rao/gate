@@ -12,7 +12,7 @@ from app.core.deps import require_admin
 from app.core.security import hash_password
 from app.models.user import User, UserRole, UserStatus, AuditLog
 from app.models.exam import Exam, ExamStatus
-from app.models.test import Test, TestStatus, Attempt, AttemptStatus
+from app.models.test import Test, TestStatus, Attempt, AttemptStatus, Result
 from app.models.question import Question
 from app.schemas.user import (
     AdminUserCreateRequest, AdminUserUpdateRequest, UserResponse,
@@ -22,6 +22,28 @@ from app.services.test_service import TestService
 from app.services.question_service import QuestionService
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
+
+
+@router.post("/attempts/{attempt_id}/release-result")
+async def release_attempt_result(
+    attempt_id: UUID,
+    current_user: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(select(Result).where(Result.attempt_id == attempt_id))
+    record = result.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evaluated result not found")
+    record.is_released = True
+    db.add(AuditLog(
+        user_id=current_user.id,
+        action="RELEASE_RESULT",
+        resource_type="RESULT",
+        resource_id=str(record.id),
+        details=f"Released result for attempt {attempt_id}",
+    ))
+    await db.flush()
+    return {"attempt_id": str(attempt_id), "released": True}
 
 
 @router.get("/dashboard")

@@ -22,7 +22,6 @@ os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-pytest-only-32chars!")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 from app.core.database import Base, get_db  # noqa: E402 — must follow env setup
 from app.core.rate_limit import reset_rate_limits  # noqa: E402
@@ -42,10 +41,11 @@ def event_loop():
 
 
 @pytest_asyncio.fixture(scope="session")
-async def test_engine():
+async def test_engine(tmp_path_factory):
     """Create the database schema once per test session."""
+    test_db_path = tmp_path_factory.mktemp("exam-platform") / "test.sqlite3"
     engine = create_async_engine(
-        TEST_DATABASE_URL,
+        f"sqlite+aiosqlite:///{test_db_path}",
         echo=False,
         connect_args={"check_same_thread": False},
     )
@@ -55,6 +55,7 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+    test_db_path.unlink(missing_ok=True)
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -82,6 +83,16 @@ async def db_session(session_factory, seeded_db) -> AsyncGenerator[AsyncSession,
     async with session_factory() as session:
         yield session
         await session.rollback()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def route_tests_through_isolated_database(db_session: AsyncSession):
+    """Bind even direct ASGITransport tests to the isolated fixture database."""
+    async def override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture()

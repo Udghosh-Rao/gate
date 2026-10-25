@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { User } from "../lib/types";
 import { BRAND } from "../lib/brand";
-import { apiLogin, apiRegister, SEED_CREDENTIALS } from "../lib/api";
+import { apiLogin, apiRegister } from "../lib/api";
 import {
   X,
   Lock,
@@ -67,31 +67,13 @@ export function AuthModal({
         onSuccess(user);
         onClose();
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "An unexpected error occurred. Please try again.");
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : "An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleQuickFill = async (key: "student" | "admin") => {
-    setErrorMsg(null);
-    const creds = SEED_CREDENTIALS[key];
-    setEmail(creds.email);
-    setPassword(creds.password);
-    setIsRegister(false);
-
-    setIsLoading(true);
-    try {
-      const { user } = await apiLogin(creds.email, creds.password);
-      onSuccess(user);
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Login failed");
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fadeIn">
@@ -244,41 +226,7 @@ export function AuthModal({
           </button>
         </div>
 
-        {/* Development & Testing Credentials */}
-        <div className="mt-6 pt-5 border-t border-slate-100">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-              <KeyRound className="w-3 h-3 text-slate-500" />
-              Testing Accounts (FastAPI Backend)
-            </span>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickFill("student")}
-              disabled={isLoading}
-              className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
-            >
-              <div className="text-[11px] font-semibold text-slate-900">
-                Student Account
-              </div>
-              <div className="text-[9px] text-slate-500 truncate">student@examplatform.dev</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickFill("admin")}
-              disabled={isLoading}
-              className="p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-left transition-colors"
-            >
-              <div className="text-[11px] font-semibold text-slate-900">
-                Admin Account
-              </div>
-              <div className="text-[9px] text-slate-500 truncate">admin@examplatform.dev</div>
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

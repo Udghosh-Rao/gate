@@ -77,6 +77,10 @@ class Settings(BaseSettings):
                 raise ValueError("Production security violation: DEBUG mode must be disabled in production.")
             if "sqlite" in self.DATABASE_URL.lower():
                 raise ValueError("Production security violation: SQLite is not supported for production. Use PostgreSQL.")
+            if self.REDIS_URL.lower().startswith(("redis://localhost", "redis://127.0.0.1")):
+                raise ValueError("Production security violation: configure a shared Redis service for revocation and rate limits.")
+            if any(origin.startswith(("http://localhost", "http://127.0.0.1")) for origin in self.CORS_ORIGINS):
+                raise ValueError("Production security violation: remove localhost origins from CORS_ORIGINS.")
             if self.BOOTSTRAP_ADMIN_PASSWORD == "Admin@Dev123":
                 raise ValueError(
                     "Production security violation: Default bootstrap password must not be used in production."

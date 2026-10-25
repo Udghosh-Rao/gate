@@ -4,11 +4,13 @@ from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin, require_admin_or_content_manager, require_student
 from app.models.user import User, UserRole
+from app.models.test import Test
 from app.schemas.test import (
     QuestionCreateRequest, QuestionUpdateRequest, QuestionResponse,
     TestSeriesCreateRequest, TestSeriesResponse,
@@ -17,7 +19,7 @@ from app.schemas.test import (
     AttemptSubmitResponse, ResultResponse,
 )
 from app.services.question_service import QuestionService
-from app.services.test_service import TestService, AttemptService, ScoringService
+from app.services.test_service import TestService, AttemptService, ScoringService, can_release_result, can_release_explanations
 
 router = APIRouter(tags=["Tests & Questions"])
 
@@ -293,13 +295,18 @@ async def get_result(
     if not result:
         raise HTTPException(status_code=404, detail="Result not found or not yet available")
 
-    if not result.is_released and current_user.role != UserRole.ADMIN:
+    test_result = await db.execute(select(Test).where(Test.id == attempt.test_id))
+    test_obj = test_result.scalar_one()
+    if not can_release_result(test_obj, result) and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Result has not been released yet",
         )
 
-    return ResultResponse.model_validate(result)
+    payload = ResultResponse.model_validate(result)
+    if current_user.role != UserRole.ADMIN and not can_release_explanations(test_obj, result):
+        payload.question_results = [detail.model_copy(update={"explanation": None}) for detail in (payload.question_results or [])]
+    return payload
 
 
 @router.get("/student/attempts")
@@ -318,8 +325,8 @@ async def list_student_attempts(
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             # Use 'is not None' — score of 0 is a valid result and must not be hidden
-            "score": float(a.result.total_score) if (getattr(a, "result", None) is not None) else None,
-            "accuracy_percentage": a.result.accuracy_percentage if (getattr(a, "result", None) is not None) else None,
+            "score": float(a.result.total_score) if (getattr(a, "result", None) is not None and can_release_result(a.test, a.result)) else None,
+            "accuracy_percentage": a.result.accuracy_percentage if (getattr(a, "result", None) is not None and can_release_result(a.test, a.result)) else None,
         }
         for a in attempts
     ]

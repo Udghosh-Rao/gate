@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Exam, Test } from "../lib/types";
-import { FALLBACK_TESTS, fetchTests } from "../lib/api";
+import { fetchTests } from "../lib/api";
 import {
   Layers,
   Clock,
@@ -24,17 +24,13 @@ interface TestCatalogProps {
 }
 
 export function TestCatalog({ exam, onSelectTest }: TestCatalogProps) {
-  const [filter, setFilter] = useState<"all" | "full" | "sectional">("all");
   const [selectedInstructionTest, setSelectedInstructionTest] = useState<Test | null>(null);
-  const [tests, setTests] = useState<Test[]>(FALLBACK_TESTS);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (exam?.id) {
-      fetchTests(exam.id).then((loaded) => {
-        if (loaded && loaded.length > 0) {
-          setTests(loaded);
-        }
-      });
+      fetchTests(exam.id).then(setTests).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Unable to load tests"));
     }
   }, [exam?.id]);
 
@@ -45,42 +41,25 @@ export function TestCatalog({ exam, onSelectTest }: TestCatalogProps) {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{exam.code} Official Test Series</span>
+            <span>{exam.code} test catalog</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Timed Computer-Based Mock Examinations
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
-            Simulated GATE test papers replicating official examination guidelines, virtual scientific calculators, server-authoritative timer limits, and deterministic question evaluation.
+            Published practice tests configured for this examination.
           </p>
         </div>
       </div>
 
-      {/* Filter Tabs */}
       <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-3">
-        <div className="flex items-center gap-2">
-          {[
-            { id: "all", label: "All Tests" },
-            { id: "full", label: "Full Length Mock" },
-            { id: "sectional", label: "Sectional Drills" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id as any)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                filter === tab.id
-                  ? "bg-blue-600 text-white shadow-xs"
-                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
         <div className="text-xs text-slate-500 font-medium">
           Showing {tests.length} available papers
         </div>
       </div>
+
+      {loadError && <div role="alert" className="p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-800">{loadError} <button onClick={() => fetchTests(exam.id).then(setTests).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Unable to load tests"))} className="underline ml-2">Retry</button></div>}
+      {!loadError && tests.length === 0 && <div className="p-6 text-center rounded-xl bg-white border border-slate-200 text-slate-600">No published tests are available for this examination yet.</div>}
 
       {/* Tests Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -117,7 +96,7 @@ export function TestCatalog({ exam, onSelectTest }: TestCatalogProps) {
                     Examination Duration
                   </span>
                   <span className="font-semibold text-slate-900">
-                    {Math.round(t.duration_seconds / 60)} minutes (3 Hours)
+                    {Math.round(t.duration_seconds / 60)} minutes
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

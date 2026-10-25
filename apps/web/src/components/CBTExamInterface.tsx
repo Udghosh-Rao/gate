@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { AttemptQuestion, AttemptAnswer, Result, Test, User } from "../lib/types";
 import { saveAttemptAnswer, submitAttempt } from "../lib/api";
 import { ScientificCalculator } from "./ScientificCalculator";
@@ -37,13 +37,21 @@ export function CBTExamInterface({
   onExitTest,
 }: CBTExamInterfaceProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>({});
+  const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>(() => Object.fromEntries(questions.map((q, idx) => [q.id, {
+    question_id: q.id,
+    selected_option_ids: [],
+    numerical_answer: undefined,
+    is_marked_for_review: false,
+    is_visited: idx === 0,
+    time_spent_seconds: 0,
+  }])));
   const [timeLeft, setTimeLeft] = useState<number>(test.duration_seconds || 10800);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
+  const submitHandler = useRef<(() => Promise<void>) | null>(null);
 
   const persistAnswer = async (qId: string, updated: AttemptAnswer) => {
     setSyncStatus("saving");
@@ -57,29 +65,13 @@ export function CBTExamInterface({
     }
   };
 
-  // Initialize answers map and mark first question as visited
-  useEffect(() => {
-    const initial: Record<string, AttemptAnswer> = {};
-    questions.forEach((q, idx) => {
-      initial[q.id] = {
-        question_id: q.id,
-        selected_option_ids: [],
-        numerical_answer: undefined,
-        is_marked_for_review: false,
-        is_visited: idx === 0,
-        time_spent_seconds: 0,
-      };
-    });
-    setAnswers(initial);
-  }, [questions]);
-
   // Server-authoritative style countdown timer
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          handleSubmitFinal();
+          void submitHandler.current?.();
           return 0;
         }
         return prev - 1;
@@ -263,6 +255,10 @@ export function CBTExamInterface({
       setIsSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    submitHandler.current = handleSubmitFinal;
+  }, [handleSubmitFinal]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none">
