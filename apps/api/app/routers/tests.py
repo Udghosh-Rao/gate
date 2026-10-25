@@ -156,8 +156,11 @@ async def create_test(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Create a test with assigned questions."""
-    service = TestService(db)
-    return await service.create_test(exam_id, data, created_by=current_user.id)
+    try:
+        service = TestService(db)
+        return await service.create_test(exam_id, data, created_by=current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/exams/{exam_id}/tests", response_model=list[TestResponse])
@@ -318,7 +321,10 @@ async def get_result(
 
     payload = ResultResponse.model_validate(result)
     if current_user.role != UserRole.ADMIN and not can_release_explanations(test_obj, result):
-        payload.question_results = [detail.model_copy(update={"explanation": None}) for detail in (payload.question_results or [])]
+        payload.question_results = [
+            detail.model_copy(update={"explanation": None, "correct_answer": None})
+            for detail in (payload.question_results or [])
+        ]
     return payload
 
 

@@ -13,7 +13,7 @@ from redis import Redis
 
 from app.core.config import settings
 from app.core.database import engine, Base, get_db
-from app.routers import auth, exams, tests, admin
+from app.routers import auth, exams, tests, admin, billing
 
 
 @asynccontextmanager
@@ -61,6 +61,7 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(exams.router, prefix=settings.API_V1_PREFIX)
 app.include_router(tests.router, prefix=settings.API_V1_PREFIX)
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX)
+app.include_router(billing.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/", tags=["Health"])

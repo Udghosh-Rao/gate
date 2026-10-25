@@ -22,6 +22,7 @@ from app.schemas.exam import (
     TopicCreateRequest, TopicResponse,
     SyllabusVersionCreateRequest, SyllabusVersionResponse,
     ResourceCreateRequest, ResourceUpdateRequest, ResourceResponse,
+    PublicResourceResponse,
 )
 from app.services.exam_service import ExamService
 
@@ -172,7 +173,7 @@ async def create_syllabus_version(
 
 # --- Study Materials / Resources (Public & Admin) ---
 
-@router.get("/exams/{exam_id}/resources", response_model=list[ResourceResponse])
+@router.get("/exams/{exam_id}/resources", response_model=list[PublicResourceResponse])
 async def list_published_resources(
     exam_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy import JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -136,6 +137,7 @@ class Test(Base):
     )
     is_retakeable: Mapped[bool] = mapped_column(Boolean, default=True)
     max_attempts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # Marking scheme config (JSON for flexibility)
     marking_scheme: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)

@@ -7,6 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.question import Question, QuestionOption, QuestionType, QuestionStatus, QuestionDifficulty
+from app.models.exam import Exam, Subject, Topic
 from app.schemas.test import QuestionCreateRequest, QuestionUpdateRequest, QuestionResponse
 
 
@@ -16,23 +17,58 @@ class QuestionService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _validate_scope(
+        self, exam_id: UUID, subject_id: UUID | None, topic_id: UUID | None
+    ) -> None:
+        exam = await self.db.execute(select(Exam.id).where(Exam.id == exam_id))
+        if exam.scalar_one_or_none() is None:
+            raise ValueError("Examination not found")
+        if subject_id is not None:
+            subject = await self.db.execute(
+                select(Subject.id).where(Subject.id == subject_id, Subject.exam_id == exam_id)
+            )
+            if subject.scalar_one_or_none() is None:
+                raise ValueError("Subject does not belong to this examination")
+        if topic_id is not None:
+            topic_query = select(Topic.id).join(Subject, Topic.subject_id == Subject.id).where(
+                Topic.id == topic_id, Subject.exam_id == exam_id
+            )
+            if subject_id is not None:
+                topic_query = topic_query.where(Topic.subject_id == subject_id)
+            topic = await self.db.execute(topic_query)
+            if topic.scalar_one_or_none() is None:
+                raise ValueError("Topic does not belong to the selected examination and subject")
+
+    @staticmethod
+    def _validate_answer_structure(
+        q_type: QuestionType,
+        options: list,
+        correct_numerical_answer: float | None,
+    ) -> None:
+        if q_type == QuestionType.NAT:
+            if correct_numerical_answer is None:
+                raise ValueError("NAT questions must have a correct numerical answer")
+            if options:
+                raise ValueError("NAT questions cannot contain answer options")
+            return
+        if correct_numerical_answer is not None:
+            raise ValueError("Choice questions cannot contain a numerical answer key")
+        if len(options) < 2:
+            raise ValueError("MCQ and MSQ questions require at least two answer options")
+        labels = [option.label.strip().upper() for option in options]
+        if len(labels) != len(set(labels)):
+            raise ValueError("Answer option labels must be unique")
+        correct_count = sum(1 for option in options if option.is_correct)
+        if q_type == QuestionType.MCQ and correct_count != 1:
+            raise ValueError("MCQ questions must have exactly one correct option")
+        if q_type == QuestionType.MSQ and correct_count < 1:
+            raise ValueError("MSQ questions must have at least one correct option")
+
     async def create_question(self, data: QuestionCreateRequest, created_by: UUID) -> QuestionResponse:
         """Create a question with options. Validates answer keys exist."""
         q_type = QuestionType(data.question_type)
-
-        # Validate: MCQ/MSQ must have options with at least one correct
-        if q_type in (QuestionType.MCQ, QuestionType.MSQ):
-            if not data.options:
-                raise ValueError(f"{q_type.value} questions must have options")
-            correct_count = sum(1 for o in data.options if o.is_correct)
-            if correct_count == 0:
-                raise ValueError("At least one option must be marked as correct")
-            if q_type == QuestionType.MCQ and correct_count > 1:
-                raise ValueError("MCQ questions must have exactly one correct option")
-
-        # Validate: NAT must have correct numerical answer
-        if q_type == QuestionType.NAT and data.correct_numerical_answer is None:
-            raise ValueError("NAT questions must have a correct numerical answer")
+        self._validate_answer_structure(q_type, data.options, data.correct_numerical_answer)
+        await self._validate_scope(data.exam_id, data.subject_id, data.topic_id)
 
         question = Question(
             exam_id=data.exam_id,
@@ -106,7 +142,16 @@ class QuestionService:
         question = await self.get_question_by_id(question_id)
         if not question:
             return None
-        question.status = QuestionStatus(new_status)
+        try:
+            next_status = QuestionStatus(new_status)
+        except ValueError as exc:
+            raise ValueError("Unsupported question status") from exc
+        if next_status == QuestionStatus.PUBLISHED:
+            self._validate_answer_structure(
+                question.question_type, question.options, question.correct_numerical_answer
+            )
+            await self._validate_scope(question.exam_id, question.subject_id, question.topic_id)
+        question.status = next_status
         await self.db.flush()
         await self.db.refresh(question)
         return QuestionResponse.model_validate(question)
@@ -124,17 +169,19 @@ class QuestionService:
         if not question:
             return None
 
-        if data.subject_id is not None:
+        fields_set = data.model_fields_set
+        next_subject_id = data.subject_id if "subject_id" in fields_set else question.subject_id
+        next_topic_id = data.topic_id if "topic_id" in fields_set else question.topic_id
+        await self._validate_scope(question.exam_id, next_subject_id, next_topic_id)
+        if "subject_id" in fields_set:
             question.subject_id = data.subject_id
-        if data.topic_id is not None:
+        if "topic_id" in fields_set:
             question.topic_id = data.topic_id
         if data.difficulty is not None:
             question.difficulty = QuestionDifficulty(data.difficulty)
-        if data.status is not None:
-            question.status = QuestionStatus(data.status)
         if data.text is not None:
             question.text = data.text
-        if data.image_url is not None:
+        if "image_url" in fields_set:
             question.image_url = data.image_url
         if data.explanation is not None:
             question.explanation = data.explanation
@@ -146,8 +193,14 @@ class QuestionService:
             question.correct_numerical_answer = data.correct_numerical_answer
         if data.numerical_tolerance is not None:
             question.numerical_tolerance = data.numerical_tolerance
+        if data.partial_credit is not None:
+            question.partial_credit = data.partial_credit
 
         if data.options is not None:
+            self._validate_answer_structure(
+                question.question_type, data.options,
+                data.correct_numerical_answer if data.correct_numerical_answer is not None else question.correct_numerical_answer,
+            )
             # Replace options — delete existing, recreate
             await self.db.execute(
                 sa_delete(QuestionOption).where(QuestionOption.question_id == question_id)
@@ -162,6 +215,11 @@ class QuestionService:
                     display_order=opt_data.display_order,
                 )
                 self.db.add(option)
+        else:
+            self._validate_answer_structure(
+                question.question_type, question.options,
+                data.correct_numerical_answer if data.correct_numerical_answer is not None else question.correct_numerical_answer,
+            )
 
         await self.db.flush()
         await self.db.refresh(question)

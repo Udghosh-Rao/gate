@@ -219,6 +219,25 @@ export async function fetchTests(examId: string): Promise<Test[]> {
   return data as Test[];
 }
 
+export async function apiUpdateQuestionStatus(
+  questionId: string,
+  newStatus: Question["status"],
+  token?: string
+): Promise<Question> {
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to publish questions.");
+  const params = new URLSearchParams({ new_status: newStatus });
+  const res = await fetch(`${getApiBase()}/admin/questions/${questionId}/status?${params}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to update question (${res.status})`);
+  }
+  return await res.json();
+}
+
 export async function fetchTestById(testId: string): Promise<Test | undefined> {
   if (!testId) return undefined;
   try {
@@ -342,8 +361,12 @@ export async function submitAttempt(
 
 export async function apiCreateExam(examData: Partial<Exam>, token?: string): Promise<Exam> {
   try {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const authToken = token || getAuthToken();
+    if (!authToken) throw new Error("Please sign in again before creating an examination.");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    };
     const res = await fetch(`${getApiBase()}/admin/exams`, {
       method: "POST",
       headers,
@@ -378,65 +401,57 @@ export async function fetchPublishedResources(examId: string, topicId?: string):
 }
 
 export async function fetchAdminResources(examId: string, token?: string): Promise<Resource[]> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = {};
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, { headers });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
-  }
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to manage study materials.");
+  const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) throw new Error(`Unable to load study materials (${res.status})`);
+  return await res.json();
 }
 
-export async function apiCreateResource(examId: string, data: Partial<Resource>, token?: string): Promise<Resource | null> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+export async function apiCreateResource(examId: string, data: Partial<Resource>, token?: string): Promise<Resource> {
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to create a study resource.");
+  const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to create resource (${res.status})`);
   }
+  return await res.json();
 }
 
-export async function apiUpdateResource(resourceId: string, data: Partial<Resource>, token?: string): Promise<Resource | null> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+export async function apiUpdateResource(resourceId: string, data: Partial<Resource>, token?: string): Promise<Resource> {
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to update a study resource.");
+  const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to update resource (${res.status})`);
   }
+  return await res.json();
 }
 
 export async function apiDeleteResource(resourceId: string, token?: string): Promise<boolean> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = {};
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
-      method: "DELETE",
-      headers,
-    });
-    return res.ok;
-  } catch {
-    return false;
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to delete a study resource.");
+  const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to delete resource (${res.status})`);
   }
+  return true;
 }
 
 export async function apiUploadStudyMaterial(
@@ -473,16 +488,23 @@ export async function apiUploadStudyMaterial(
 
 // Question Bank Management
 export async function fetchAdminQuestions(examId: string, token?: string): Promise<Question[]> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = {};
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/questions?exam_id=${examId}&limit=100`, { headers });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
-  }
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to manage the question bank.");
+  const res = await fetch(`${getApiBase()}/admin/questions?exam_id=${examId}&limit=100`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) throw new Error(`Unable to load question bank (${res.status})`);
+  return await res.json();
+}
+
+export async function fetchAdminTests(examId: string, token?: string): Promise<Test[]> {
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to manage tests.");
+  const res = await fetch(`${getApiBase()}/admin/exams/${examId}/tests`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) throw new Error(`Unable to load admin tests (${res.status})`);
+  return await res.json();
 }
 
 export interface QuestionCreatePayload {
@@ -551,20 +573,18 @@ export async function apiCreateTest(examId: string, data: TestCreatePayload, tok
   return await res.json();
 }
 
-export async function apiPublishTest(testId: string, token?: string): Promise<Test | null> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = {};
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${getApiBase()}/admin/tests/${testId}/publish`, {
-      method: "POST",
-      headers,
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+export async function apiPublishTest(testId: string, token?: string): Promise<Test> {
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Please sign in to publish tests.");
+  const res = await fetch(`${getApiBase()}/admin/tests/${testId}/publish`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Unable to publish test (${res.status})`);
   }
+  return await res.json();
 }
 
 // Student Attempt History
@@ -579,6 +599,117 @@ export async function fetchStudentAttemptsList(token?: string): Promise<StudentA
     return await res.json();
   } catch {
     return [];
+  }
+}
+
+export interface BillingPlan {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  amount_minor: number;
+  currency: string;
+  interval_unit: string;
+  interval_count: number;
+  total_billing_cycles: number;
+  included_exam_ids: string[];
+  is_published: boolean;
+}
+
+export async function fetchAdminBillingPlans(): Promise<BillingPlan[]> {
+  const token = getAuthToken();
+  if (!token) throw new Error("Sign in as an administrator to manage plans.");
+  const res = await fetch(`${getApiBase()}/admin/billing/plans`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Unable to load plans (${res.status})`);
+  return res.json();
+}
+
+export async function apiCreateBillingPlan(input: {
+  name: string;
+  slug: string;
+  description?: string;
+  amount_minor: number;
+  currency: "INR";
+  interval_unit: "monthly" | "yearly";
+  interval_count: number;
+  total_billing_cycles: number;
+  included_exam_ids: string[];
+  is_published: boolean;
+}): Promise<BillingPlan> {
+  const token = getAuthToken();
+  if (!token) throw new Error("Sign in as an administrator to create plans.");
+  const res = await fetch(`${getApiBase()}/admin/billing/plans`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to create plan (${res.status})`);
+  }
+  return res.json();
+}
+
+export interface BillingSubscription {
+  id: string;
+  plan_id: string;
+  plan_name: string;
+  provider_subscription_id: string;
+  status: string;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_cycle_end: boolean;
+  created_at: string;
+}
+
+export async function fetchBillingPlans(): Promise<BillingPlan[]> {
+  const res = await fetch(`${getApiBase()}/billing/plans`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Unable to load subscription plans (${res.status})`);
+  return res.json();
+}
+
+export async function createBillingCheckout(planId: string): Promise<{
+  subscription_id: string;
+  key_id: string;
+  name: string;
+  description: string;
+  amount_minor: number;
+  currency: string;
+}> {
+  const token = getAuthToken();
+  if (!token) throw new Error("Sign in to start a subscription.");
+  const res = await fetch(`${getApiBase()}/billing/checkout?plan_id=${encodeURIComponent(planId)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to start checkout (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function fetchMySubscriptions(): Promise<BillingSubscription[]> {
+  const token = getAuthToken();
+  if (!token) throw new Error("Sign in to view subscriptions.");
+  const res = await fetch(`${getApiBase()}/billing/me`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (!res.ok) throw new Error(`Unable to load subscriptions (${res.status})`);
+  return res.json();
+}
+
+export async function cancelBillingSubscription(subscriptionId: string): Promise<void> {
+  const token = getAuthToken();
+  if (!token) throw new Error("Sign in to manage subscriptions.");
+  const res = await fetch(`${getApiBase()}/billing/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to schedule cancellation (${res.status})`);
   }
 }
 

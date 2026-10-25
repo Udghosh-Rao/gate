@@ -239,7 +239,7 @@ export default function Home() {
           />
         )}
 
-        {currentTab === "pricing" && <PricingPage onNavigate={setCurrentTab} />}
+        {currentTab === "pricing" && <PricingPage onNavigate={setCurrentTab} onOpenAuth={handleOpenAuth} />}
 
         {currentTab === "about" && <AboutPage onNavigate={setCurrentTab} />}
 

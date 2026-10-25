@@ -19,25 +19,40 @@ Add shared project variables in Vercel, with separate Preview and Production val
 APP_ENV=production
 DEBUG=false
 DATABASE_URL=postgresql+asyncpg://<pooled-neon-connection>
-DATABASE_URL_SYNC=postgresql://<migration-safe-neon-connection>
+DATABASE_URL_SYNC=postgresql+psycopg://<migration-safe-neon-connection>
 JWT_SECRET_KEY=<random-secret-at-least-32-characters>
 REDIS_URL=rediss://<shared-redis-endpoint>
 CORS_ORIGINS=["https://<your-vercel-domain>"]
 RATE_LIMIT_ENABLED=true
+RAZORPAY_MODE=test
+RAZORPAY_KEY_ID=<rzp_test_key_id>
+RAZORPAY_KEY_SECRET=<razorpay_test_key_secret>
+RAZORPAY_WEBHOOK_SECRET=<webhook_secret>
 ```
 
-Use managed PostgreSQL and a pooled runtime URL for serverless database access. Run Alembic migrations separately from a trusted environment using `DATABASE_URL_SYNC`; production app startup does not create tables. Production also requires shared TLS Redis for token revocation and rate limits. Do not run the development seed script against production.
+Use managed PostgreSQL and a pooled runtime URL for serverless database access. Run Alembic migrations separately from a trusted environment using `DATABASE_URL_SYNC`; production app startup does not create tables. The development dependencies include the PostgreSQL `psycopg` driver for the migration environment. Production also requires shared TLS Redis for token revocation and rate limits. Do not run the development seed script against production.
 
 ```bash
 cd apps/api
-DATABASE_URL_SYNC='<migration-safe-postgres-url>' alembic upgrade head
-DATABASE_URL_SYNC='<migration-safe-postgres-url>' alembic check
+DATABASE_URL_SYNC='postgresql+psycopg://<migration-safe-postgres-url>' alembic upgrade head
+DATABASE_URL_SYNC='postgresql+psycopg://<migration-safe-postgres-url>' alembic check
 ```
 
-Production PDF uploads remain disabled until private durable storage is integrated. Paid note delivery, subscription entitlements, and Razorpay billing are not implemented; do not sell protected resources until those workflows and their server-side access checks are complete. Provision the first administrator through a reviewed one-time process; the repository does not yet provide a production-safe bootstrap command.
+After migrating a new production database, provision the first administrator through the interactive command from `apps/api`. It requires `APP_ENV=production`, PostgreSQL, validates the password policy, and prompts for the password without adding it to shell history. It refuses an existing email:
+
+```bash
+cd apps/api
+python -m app.admin_cli create-admin --email owner@example.com --name "Platform Owner"
+```
+
+Do not run the development seed script against production.
+
+Razorpay subscription plans, checkout creation, signed webhook verification, idempotent event processing, payment records, cancellation, and test access entitlements are implemented. Configure test credentials before checkout; use `RAZORPAY_MODE=live` only after test flows and webhook verification pass. Set the Razorpay webhook URL to `https://<your-vercel-domain>/api/v1/billing/webhooks/razorpay` and subscribe to `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.paused`, `subscription.resumed`, `subscription.cancelled`, `subscription.completed`, `payment.captured`, `payment.failed`, and `payment.refunded`.
+
+Paid note access is not ready for sale: files still use local upload storage in development, production uploads return unavailable, and private Vercel Blob storage plus an authenticated in-app reader are not integrated. The public resource response excludes file URLs, and the student UI no longer links to the admin-only download endpoint. Do not mark resources paid until private storage and page delivery are in place. Paid-test access checks are enforced by the attempt-start API.
 
 ## Local verification and release
 
 Use `vercel dev` from the repository root after linking the project to verify both services and path routing together. The browser API base defaults to `/api/v1` in production, so no API hostname needs to be configured in `NEXT_PUBLIC_API_URL` for this single-domain setup.
 
-Before release, configure Vercel's Services framework, add Preview and Production environment values, run migrations, and verify `/health`, exam discovery, login, and the frontend's API requests on a Preview deployment. There is no GitHub Actions pipeline; build and test scripts remain available for local checks.
+Before release, configure Vercel's Services framework, add Preview and Production environment values, run migrations, configure Razorpay test credentials and webhook, and verify `/health`, exam discovery, login, and the frontend's API requests on a Preview deployment. Private Blob storage and the paid-note reader remain prerequisites before offering paid notes. There is no GitHub Actions pipeline; build and test scripts remain available for local checks.

@@ -167,14 +167,12 @@ export interface AttemptStartResponse {
 
 export interface QuestionResultDetail {
   question_id: string;
+  question_number: number;
   question_type: QuestionType;
   question_text: string;
-  options: QuestionOption[];
-  student_selected_options?: string[] | null;
-  student_numerical_answer?: number | null;
-  correct_option_ids?: string[] | null;
-  correct_numerical_answer?: number | null;
-  is_correct: boolean;
+  student_answer?: string | null;
+  correct_answer?: string | null;
+  is_correct?: boolean | null;
   marks_awarded: number;
   explanation?: string | null;
 }

@@ -2,15 +2,13 @@
 
 import React, { useState, useEffect } from "react";
 import { Exam, Subject, Resource, Topic } from "../lib/types";
-import { fetchSubjects, fetchTopics, fetchPublishedResources, resourceDownloadUrl } from "../lib/api";
+import { fetchSubjects, fetchTopics, fetchPublishedResources } from "../lib/api";
 import {
   BookOpen,
   FileText,
-  Download,
   CheckCircle2,
   ChevronRight,
   Layers,
-  ExternalLink,
   GraduationCap,
   Sparkles,
   Award,
@@ -109,7 +107,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
           </div>
         </div>
 
-        {/* Right: Topics & Downloadable Materials (8 cols) */}
+        {/* Right: Topics & Study Materials (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
           {/* Active Subject Scope Card */}
           <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs">
@@ -150,7 +148,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             </div>
           </div>
 
-          {/* Downloadable Study Notes & Revision Sheets */}
+          {/* Published Study Notes */}
           <div className="space-y-3 pt-4">
             <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
               Published Study Materials
@@ -178,10 +176,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                     <span className="text-[10px] uppercase font-bold text-slate-400">
                       PDF Document
                     </span>
-                    <a href={resourceDownloadUrl(res.id)} className="text-xs text-blue-600 font-bold hover:text-blue-800 flex items-center gap-1">
-                      <span>Download material</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                    <span className="text-xs font-medium text-slate-500">Secure reader not configured</span>
                   </div>
                 </div>
               ))}

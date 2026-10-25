@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     AUTH_RATE_LIMIT_PER_MINUTE: int = 15
 
+    # Optional until the owner connects Razorpay test credentials. All values
+    # are server-only and must never be exposed through NEXT_PUBLIC_*.
+    RAZORPAY_KEY_ID: str | None = None
+    RAZORPAY_KEY_SECRET: str | None = None
+    RAZORPAY_WEBHOOK_SECRET: str | None = None
+    RAZORPAY_MODE: str = "test"
+
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: str | List[str]) -> List[str]:

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.question import Question, QuestionOption, QuestionType
+from app.models.exam import Exam
 from app.models.test import (
     Test, TestSeries, TestQuestion, TestSection,
     Attempt, AttemptAnswer, Result,
@@ -55,9 +56,9 @@ def can_release_explanations(test: Test, result: Result) -> bool:
     if policy == ExplanationReleasePolicy.AFTER_DEADLINE:
         release_at = ensure_utc(test.result_release_at)
         return bool(release_at and release_at <= datetime.now(timezone.utc))
-    # This schema has no independent explanation-approval flag. Fail closed for
-    # MANUAL rather than coupling it to the result release bit.
-    return False
+    # The explicit admin release action is also the approval bit for manual
+    # explanation release when the overall score is already visible.
+    return bool(result.is_released)
 
 
 class TestService:
@@ -94,6 +95,29 @@ class TestService:
     async def create_test(
         self, exam_id: UUID, data: TestCreateRequest, created_by: UUID
     ) -> TestResponse:
+        if (await self.db.execute(select(Exam.id).where(Exam.id == exam_id))).scalar_one_or_none() is None:
+            raise ValueError("Examination not found")
+        if data.test_series_id is not None:
+            series = await self.db.execute(select(TestSeries.id).where(
+                TestSeries.id == data.test_series_id, TestSeries.exam_id == exam_id
+            ))
+            if series.scalar_one_or_none() is None:
+                raise ValueError("Test series does not belong to this examination")
+        question_ids = [item.question_id for item in data.questions]
+        question_numbers = [item.question_number for item in data.questions]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("A question can only be assigned once to a test")
+        if len(question_numbers) != len(set(question_numbers)) or any(number < 1 for number in question_numbers):
+            raise ValueError("Question numbers must be unique positive integers")
+        if question_ids:
+            question_rows = await self.db.execute(
+                select(Question.id, Question.exam_id).where(Question.id.in_(question_ids))
+            )
+            question_exam_ids = {row.id: row.exam_id for row in question_rows.all()}
+            if set(question_ids) != set(question_exam_ids):
+                raise ValueError("One or more assigned questions do not exist")
+            if any(question_exam_ids[question_id] != exam_id for question_id in question_ids):
+                raise ValueError("All test questions must belong to the selected examination")
         test = Test(
             exam_id=exam_id,
             test_series_id=data.test_series_id,
@@ -106,8 +130,11 @@ class TestService:
             total_questions=len(data.questions),
             status=TestStatus.DRAFT,
             result_release_policy=ResultReleasePolicy(data.result_release_policy),
+            explanation_release_policy=ExplanationReleasePolicy(data.explanation_release_policy),
+            result_release_at=data.result_release_at,
             is_retakeable=data.is_retakeable,
             max_attempts=data.max_attempts,
+            is_paid=data.is_paid,
             marking_scheme=data.marking_scheme,
             display_order=data.display_order,
             created_by=created_by,
@@ -196,6 +223,8 @@ class TestService:
             q = tq.question
             if q is None:
                 raise ValueError("Test contains a reference to a question that no longer exists")
+            if q.exam_id != test.exam_id:
+                raise ValueError("All questions must belong to the test's examination")
             if q.status != QuestionStatus.PUBLISHED:
                 raise ValueError(
                     f"Question '{q.text[:60]}...' (id={q.id}) is not published. "
@@ -224,12 +253,16 @@ class AttemptService:
         self, test_id: UUID, student_id: UUID
     ) -> AttemptCreateResponse:
         """Create a new attempt or resume an in-progress one."""
-        test = await self.db.execute(select(Test).where(Test.id == test_id))
+        test = await self.db.execute(select(Test).where(Test.id == test_id).with_for_update())
         test = test.scalar_one_or_none()
         if not test:
             raise ValueError("Test not found")
         if test.status != TestStatus.PUBLISHED:
             raise ValueError("Test is not available")
+        if test.is_paid:
+            from app.services.billing_service import has_exam_entitlement
+            if not await has_exam_entitlement(self.db, student_id, test.exam_id):
+                raise ValueError("An active subscription with access to this examination is required")
 
         # Check for existing in-progress attempt to resume
         existing = await self.db.execute(
@@ -247,12 +280,7 @@ class AttemptService:
                 existing_attempt.status = AttemptStatus.EXPIRED
                 existing_attempt.submitted_at = ensure_utc(existing_attempt.expires_at)
                 await self.db.flush()
-                # Evaluate the expired attempt so student gets a score
-                try:
-                    scoring = ScoringService(self.db)
-                    await scoring.evaluate_attempt_idempotent(existing_attempt.id)
-                except Exception:
-                    pass  # Evaluation failure must not block starting a new attempt
+                await ScoringService(self.db).evaluate_attempt_idempotent(existing_attempt.id)
             else:
                 # Resume — load questions
                 questions = await self._load_test_questions_for_student(test_id)
@@ -446,7 +474,7 @@ class AttemptService:
             raise PermissionError("You do not own this attempt")
 
         # Already finalized — return existing state (idempotent)
-        if attempt.status in (AttemptStatus.SUBMITTED, AttemptStatus.EVALUATED):
+        if attempt.status in (AttemptStatus.SUBMITTED, AttemptStatus.EVALUATED, AttemptStatus.EXPIRED):
             return AttemptSubmitResponse(
                 id=attempt.id,
                 status=attempt.status.value,
@@ -492,14 +520,16 @@ class AttemptService:
         if attempt.status not in (AttemptStatus.IN_PROGRESS, AttemptStatus.CREATED):
             raise ValueError("This attempt is already finalized")
 
-        # Check expiry — persist the status change before raising so the
-        # update survives even if the caller rolls back the outer transaction.
+        # Check expiry and finalize it before raising the expected request error.
         now = datetime.now(timezone.utc)
         if attempt.expires_at and ensure_utc(attempt.expires_at) <= now:
             attempt.status = AttemptStatus.EXPIRED
             attempt.submitted_at = ensure_utc(attempt.expires_at)
             await self.db.flush()
-            await self.db.commit()  # Durably persist expiry before raising
+            await ScoringService(self.db).evaluate_attempt_idempotent(attempt.id)
+            # The router returns 400 and the request dependency rolls back on
+            # exceptions, so commit this finalized score explicitly first.
+            await self.db.commit()
             raise ValueError("This attempt has expired")
 
         return attempt
@@ -543,7 +573,7 @@ class ScoringService:
     async def evaluate_attempt(self, attempt_id: UUID) -> ResultResponse:
         """Score a submitted attempt and persist the result."""
         result = await self.db.execute(
-            select(Attempt).where(Attempt.id == attempt_id)
+            select(Attempt).where(Attempt.id == attempt_id).with_for_update()
         )
         attempt = result.scalar_one_or_none()
         if not attempt:
@@ -718,7 +748,11 @@ class ScoringService:
         selected = set(answer.selected_option_ids)
         if selected == correct_ids:
             return True, pos_marks
-        # No negative marking for MSQ by default
+        # Optional partial credit applies only when every selected option is
+        # correct; selecting any distractor receives zero marks.
+        if question.partial_credit and selected and selected.issubset(correct_ids):
+            return False, pos_marks * (len(selected) / len(correct_ids))
+        # No negative marking for MSQ by default.
         return False, 0.0
 
     def _evaluate_nat(

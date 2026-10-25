@@ -129,6 +129,7 @@ class ResourceCreateRequest(BaseModel):
     file_size_bytes: Optional[int] = None
     mime_type: Optional[str] = "application/pdf"
     is_published: bool = True
+    is_paid: bool = False
 
 
 class ResourceUpdateRequest(BaseModel):
@@ -138,6 +139,7 @@ class ResourceUpdateRequest(BaseModel):
     resource_type: Optional[str] = None
     file_url: Optional[str] = None
     is_published: Optional[bool] = None
+    is_paid: Optional[bool] = None
 
 
 class ResourceResponse(BaseModel):
@@ -151,6 +153,25 @@ class ResourceResponse(BaseModel):
     file_size_bytes: Optional[int] = None
     mime_type: Optional[str] = None
     is_published: bool
+    is_paid: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PublicResourceResponse(BaseModel):
+    """Resource catalogue metadata without internal storage identifiers."""
+    id: UUID
+    exam_id: UUID
+    topic_id: Optional[UUID] = None
+    title: str
+    description: Optional[str] = None
+    resource_type: str
+    file_size_bytes: Optional[int] = None
+    mime_type: Optional[str] = None
+    is_published: bool
+    is_paid: bool = False
     created_at: datetime
     updated_at: datetime
 

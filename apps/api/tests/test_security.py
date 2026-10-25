@@ -18,10 +18,30 @@ Tests the following invariants that must NEVER regress:
 
 import pytest
 from httpx import AsyncClient, ASGITransport
+from uuid import UUID
+
+from app.models.test import Test as ExamTest, ExplanationReleasePolicy
+from app.core.database import AsyncSession
+from app.core.config import settings
+from app.services.billing_service import verify_webhook_signature
 
 from app.main import app
 
 BASE = "http://test"
+
+
+def test_razorpay_webhook_signature_is_verified(monkeypatch):
+    import hashlib
+    import hmac
+
+    raw_body = b'{"event":"subscription.activated"}'
+    secret = "test-webhook-secret"
+    signature = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    monkeypatch.setattr(settings, "RAZORPAY_WEBHOOK_SECRET", secret)
+    assert verify_webhook_signature(raw_body, signature)
+    assert not verify_webhook_signature(raw_body, "0" * 64)
+    monkeypatch.setattr(settings, "RAZORPAY_WEBHOOK_SECRET", None)
+    assert not verify_webhook_signature(raw_body, signature)
 
 
 # ---------------------------------------------------------------------------
@@ -407,3 +427,60 @@ async def test_zero_score_reported_honestly():
             assert result["total_score"] is not None, (
                 "Zero score returned as null — honesty bug"
             )
+
+
+@pytest.mark.asyncio
+async def test_content_manager_cannot_publish_question_via_general_update():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE) as c:
+        gid = await _gate_da_id(c)
+        manager = await _login(c, "content@examplatform.dev", "Content@Dev123")
+        headers = {"Authorization": f"Bearer {manager['access_token']}"}
+        created = await c.post("/api/v1/admin/questions", headers=headers, json={
+            "exam_id": gid,
+            "question_type": "MCQ",
+            "text": "Which value is the identity element for addition?",
+            "difficulty": "EASY",
+            "positive_marks": 1,
+            "negative_marks": 0,
+            "options": [
+                {"label": "A", "text": "0", "is_correct": True},
+                {"label": "B", "text": "1", "is_correct": False},
+            ],
+        })
+        assert created.status_code == 201, created.text
+        qid = created.json()["id"]
+        attempted_publish = await c.patch(
+            f"/api/v1/admin/questions/{qid}",
+            headers=headers,
+            json={"status": "PUBLISHED"},
+        )
+        assert attempted_publish.status_code == 200, attempted_publish.text
+        assert attempted_publish.json()["status"] == "DRAFT"
+
+
+@pytest.mark.asyncio
+async def test_result_withholds_correct_answers_when_explanations_are_held(db_session: AsyncSession):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE) as c:
+        gid = await _gate_da_id(c)
+        found = await _get_published_test(c, gid)
+        if not found:
+            pytest.skip("No published test seeded")
+        _, test_id = found
+        db_test = await db_session.get(ExamTest, UUID(test_id))
+        assert db_test is not None
+        db_test.explanation_release_policy = ExplanationReleasePolicy.NEVER
+        await db_session.flush()
+
+        student = await _login(c, "student@examplatform.dev", "Student@Dev123")
+        headers = {"Authorization": f"Bearer {student['access_token']}"}
+        attempt = await c.post(f"/api/v1/tests/{test_id}/attempts", headers=headers)
+        assert attempt.status_code == 200, attempt.text
+        attempt_id = attempt.json()["id"]
+        submitted = await c.post(f"/api/v1/attempts/{attempt_id}/submit", headers=headers)
+        assert submitted.status_code == 200, submitted.text
+        result = await c.get(f"/api/v1/attempts/{attempt_id}/result", headers=headers)
+        assert result.status_code == 200, result.text
+        assert all(
+            item["correct_answer"] is None and item["explanation"] is None
+            for item in result.json()["question_results"]
+        )

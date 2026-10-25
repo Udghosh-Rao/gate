@@ -29,11 +29,9 @@ export function ResultAnalyticsView({
   const [filter, setFilter] = useState<"all" | "correct" | "incorrect" | "unanswered">("all");
 
   const filteredQuestions = (result.question_results || []).filter((q) => {
-    if (filter === "correct") return q.is_correct;
-    if (filter === "incorrect")
-      return !q.is_correct && (q.student_selected_options?.length || q.student_numerical_answer !== undefined);
-    if (filter === "unanswered")
-      return !q.student_selected_options?.length && q.student_numerical_answer === undefined;
+    if (filter === "correct") return q.is_correct === true;
+    if (filter === "incorrect") return q.is_correct === false && q.student_answer != null;
+    if (filter === "unanswered") return q.student_answer == null;
     return true;
   });
 
@@ -216,7 +214,7 @@ export function ResultAnalyticsView({
           )}
 
           {filteredQuestions.map((q, idx) => {
-            const isAnswered = (q.student_selected_options?.length ?? 0) > 0 || q.student_numerical_answer !== undefined;
+            const isAnswered = q.student_answer != null;
 
             return (
               <div
@@ -234,15 +232,19 @@ export function ResultAnalyticsView({
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", paddingBottom: "0.875rem", marginBottom: "0.875rem", borderBottom: "1px solid var(--border)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, padding: "0.1875rem 0.5rem", borderRadius: "0.25rem", background: "#f1f5f9", color: "var(--ink)" }}>
-                      Q{idx + 1}
+                    Q{q.question_number}
                     </span>
                     <span style={{ fontSize: "0.75rem", color: "var(--ink-muted)" }}>Type: {q.question_type}</span>
                   </div>
 
-                  {q.is_correct ? (
+                  {q.is_correct === true ? (
                     <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.625rem", borderRadius: "0.375rem", background: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0" }}>
                       <CheckCircle2 style={{ width: "0.75rem", height: "0.75rem" }} />
                       Correct (+{q.marks_awarded} marks)
+                    </span>
+                  ) : isAnswered && q.marks_awarded > 0 ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.625rem", borderRadius: "0.375rem", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
+                      Partial credit (+{q.marks_awarded} marks)
                     </span>
                   ) : isAnswered ? (
                     <span style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.75rem", fontWeight: 700, padding: "0.25rem 0.625rem", borderRadius: "0.375rem", background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }}>
@@ -261,70 +263,16 @@ export function ResultAnalyticsView({
                   {q.question_text}
                 </p>
 
-                {/* MCQ/MSQ Options */}
-                {q.options && q.options.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", marginBottom: "1rem" }}>
-                    {q.options.map((opt) => {
-                      const isStudentSelected = q.student_selected_options?.includes(opt.id);
-                      const isCorrectOpt = q.correct_option_ids?.includes(opt.id);
-
-                      const style: React.CSSProperties = {
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: "0.5rem",
-                        padding: "0.5rem 0.75rem",
-                        borderRadius: "0.375rem",
-                        fontSize: "0.84375rem",
-                        border: "1px solid",
-                        ...(isCorrectOpt
-                          ? { background: "#dcfce7", borderColor: "#86efac", color: "#14532d" }
-                          : isStudentSelected && !isCorrectOpt
-                          ? { background: "#fee2e2", borderColor: "#fca5a5", color: "#7f1d1d" }
-                          : { background: "#f8fafc", borderColor: "var(--border)", color: "var(--ink)" }),
-                      };
-
-                      return (
-                        <div key={opt.id} style={style}>
-                          <div style={{ display: "flex", gap: "0.5rem" }}>
-                            <span style={{ fontWeight: 700, flexShrink: 0 }}>{opt.label})</span>
-                            <span>{opt.text}</span>
-                          </div>
-                          <div style={{ display: "flex", gap: "0.375rem", flexShrink: 0 }}>
-                            {isStudentSelected && (
-                              <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", background: "#dbeafe", color: "#1e3a8a", borderRadius: "0.25rem", border: "1px solid #bfdbfe", whiteSpace: "nowrap" }}>
-                                Your answer
-                              </span>
-                            )}
-                            {isCorrectOpt && (
-                              <span style={{ fontSize: "0.6875rem", fontWeight: 700, padding: "0.125rem 0.375rem", background: "#dcfce7", color: "#166534", borderRadius: "0.25rem", border: "1px solid #bbf7d0", whiteSpace: "nowrap" }}>
-                                ✓ Correct
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem", padding: "0.75rem 1rem", background: "#f8fafc", borderRadius: "0.375rem", border: "1px solid var(--border)", fontSize: "0.84375rem" }}>
+                  <div>
+                    <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>Your answer: </span>
+                    <span style={{ fontWeight: 700, color: "var(--ink)", fontFamily: "monospace" }}>{q.student_answer ?? "—"}</span>
                   </div>
-                )}
-
-                {/* NAT answer info */}
-                {q.question_type === "NAT" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem", padding: "0.75rem 1rem", background: "#f8fafc", borderRadius: "0.375rem", border: "1px solid var(--border)", fontSize: "0.84375rem" }}>
-                    <div>
-                      <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>Your answer: </span>
-                      <span style={{ fontWeight: 700, color: "var(--ink)", fontFamily: "monospace" }}>
-                        {q.student_numerical_answer !== undefined ? q.student_numerical_answer : "—"}
-                      </span>
-                    </div>
-                    <div>
-                      <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>Correct answer: </span>
-                      <span style={{ fontWeight: 700, color: "#166534", fontFamily: "monospace" }}>
-                        {q.correct_numerical_answer}
-                      </span>
-                    </div>
+                  <div>
+                    <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>Correct answer: </span>
+                    <span style={{ fontWeight: 700, color: "#166534", fontFamily: "monospace" }}>{q.correct_answer ?? "Withheld"}</span>
                   </div>
-                )}
+                </div>
 
                 {/* Explanation */}
                 {q.explanation && (

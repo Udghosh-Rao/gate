@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     Uuid,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -185,6 +186,7 @@ class Resource(Base):
     file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

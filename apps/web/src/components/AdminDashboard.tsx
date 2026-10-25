@@ -11,10 +11,14 @@ import {
   apiCreateQuestion,
   QuestionCreatePayload,
   fetchAdminQuestions,
+  apiUpdateQuestionStatus,
   apiCreateTest,
   apiPublishTest,
-  fetchTests,
+  fetchAdminTests,
   apiFetchAdminMetrics,
+  BillingPlan,
+  apiCreateBillingPlan,
+  fetchAdminBillingPlans,
 } from "../lib/api";
 import {
   ShieldCheck,
@@ -34,6 +38,7 @@ import {
   Filter,
   BarChart3,
   RefreshCw,
+  WalletCards,
 } from "lucide-react";
 
 interface AdminDashboardProps {
@@ -55,7 +60,7 @@ export function AdminDashboard({
 
   // Sub-tabs
   const [activeTab, setActiveTab] = useState<
-    "overview" | "exams" | "resources" | "questions" | "tests"
+    "overview" | "exams" | "resources" | "questions" | "tests" | "plans"
   >("overview");
 
   // Selected Exam for sub-views
@@ -74,6 +79,14 @@ export function AdminDashboard({
     total_users: number;
   } | null>(null);
   const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [managementError, setManagementError] = useState<string | null>(null);
+  const [billingPlans, setBillingPlans] = useState<BillingPlan[]>([]);
+  const [planName, setPlanName] = useState("");
+  const [planPrice, setPlanPrice] = useState("");
+  const [planInterval, setPlanInterval] = useState<"monthly" | "yearly">("monthly");
+  const [planExamIds, setPlanExamIds] = useState<string[]>([]);
+  const [planPublished, setPlanPublished] = useState(false);
+  const [isSavingPlan, setIsSavingPlan] = useState(false);
 
   useEffect(() => {
     apiFetchAdminMetrics().then((res) => {
@@ -106,11 +119,12 @@ export function AdminDashboard({
   const loadResources = async (examId: string) => {
     if (!examId) return;
     setIsLoadingResources(true);
+    setManagementError(null);
     try {
       const data = await fetchAdminResources(examId);
       setResources(data);
-    } catch {
-      setResources([]);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to load study materials.");
     } finally {
       setIsLoadingResources(false);
     }
@@ -145,11 +159,12 @@ export function AdminDashboard({
   const loadQuestions = async (examId: string) => {
     if (!examId) return;
     setIsLoadingQuestions(true);
+    setManagementError(null);
     try {
       const data = await fetchAdminQuestions(examId);
       setQuestions(data);
-    } catch {
-      setQuestions([]);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to load questions.");
     } finally {
       setIsLoadingQuestions(false);
     }
@@ -175,11 +190,12 @@ export function AdminDashboard({
   const loadTests = async (examId: string) => {
     if (!examId) return;
     setIsLoadingTests(true);
+    setManagementError(null);
     try {
-      const data = await fetchTests(examId);
+      const data = await fetchAdminTests(examId);
       setTests(data);
-    } catch {
-      setTests([]);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to load tests.");
     } finally {
       setIsLoadingTests(false);
     }
@@ -190,6 +206,21 @@ export function AdminDashboard({
       void Promise.resolve().then(() => loadTests(selectedAdminExamId));
     }
   }, [activeTab, selectedAdminExamId]);
+
+  const loadBillingPlans = async () => {
+    try {
+      setBillingPlans(await fetchAdminBillingPlans());
+      setManagementError(null);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to load subscription plans.");
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "plans" && currentUser?.role === "ADMIN") {
+      void Promise.resolve().then(loadBillingPlans);
+    }
+  }, [activeTab, currentUser?.role]);
 
   // Unauthorized Guard
   if (!isAuthorized) {
@@ -234,14 +265,18 @@ export function AdminDashboard({
         "Standard competitive computer-based examination guidelines apply.",
     };
 
-    const newExam = await apiCreateExam({ ...examPayload, status: "DRAFT" });
-
-    onAddExam(newExam);
-    setShowAddExamModal(false);
-    setExamName("");
-    setExamCode("");
-    setExamDesc("");
-    setExamInstructions("");
+    try {
+      const newExam = await apiCreateExam({ ...examPayload, status: "DRAFT" });
+      onAddExam(newExam);
+      setShowAddExamModal(false);
+      setExamName("");
+      setExamCode("");
+      setExamDesc("");
+      setExamInstructions("");
+      setManagementError(null);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to create examination.");
+    }
   };
 
   const handleCreateResource = async (e: React.FormEvent) => {
@@ -268,14 +303,73 @@ export function AdminDashboard({
 
   const handleDeleteResource = async (id: string) => {
     if (confirm("Are you sure you want to delete this study resource?")) {
-      await apiDeleteResource(id);
-      loadResources(activeExamId);
+      try {
+        await apiDeleteResource(id);
+        await loadResources(activeExamId);
+      } catch (error) {
+        setManagementError(error instanceof Error ? error.message : "Unable to delete resource.");
+      }
     }
   };
 
   const handleToggleResourcePublish = async (res: Resource) => {
-    await apiUpdateResource(res.id, { is_published: !res.is_published });
-    loadResources(activeExamId);
+    try {
+      await apiUpdateResource(res.id, { is_published: !res.is_published });
+      await loadResources(activeExamId);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to update resource.");
+    }
+  };
+
+  const handlePublishQuestion = async (questionId: string) => {
+    try {
+      await apiUpdateQuestionStatus(questionId, "PUBLISHED");
+      await loadQuestions(activeExamId);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to publish question.");
+    }
+  };
+
+  const handlePublishTest = async (testId: string) => {
+    try {
+      await apiPublishTest(testId);
+      await loadTests(activeExamId);
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to publish test.");
+    }
+  };
+
+  const handleCreatePlan = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(planPrice);
+    if (!planName.trim() || !Number.isFinite(amount) || amount <= 0 || planExamIds.length === 0) {
+      setManagementError("Enter a plan name and valid price, and select at least one examination.");
+      return;
+    }
+    setIsSavingPlan(true);
+    setManagementError(null);
+    try {
+      await apiCreateBillingPlan({
+        name: planName.trim(),
+        slug: planName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+        amount_minor: Math.round(amount * 100),
+        currency: "INR",
+        interval_unit: planInterval,
+        interval_count: 1,
+        total_billing_cycles: planInterval === "monthly" ? 12 : 1,
+        included_exam_ids: planExamIds,
+        is_published: planPublished,
+      });
+      setPlanName("");
+      setPlanPrice("");
+      setPlanExamIds([]);
+      setPlanPublished(false);
+      await loadBillingPlans();
+    } catch (error) {
+      setManagementError(error instanceof Error ? error.message : "Unable to create plan.");
+    } finally {
+      setIsSavingPlan(false);
+    }
   };
 
   const handleCreateQuestion = async (e: React.FormEvent) => {
@@ -373,12 +467,7 @@ export function AdminDashboard({
       };
 
       const created = await apiCreateTest(activeExamId, payload);
-      if (created?.id) {
-        // Auto-publish test if it contains questions
-        if (selectedQuestionIds.length > 0) {
-          await apiPublishTest(created.id);
-        }
-      }
+      if (!created?.id) throw new Error("The test was not saved. Please try again.");
 
       setShowAddTestModal(false);
       setTestTitle("");
@@ -392,6 +481,11 @@ export function AdminDashboard({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {managementError && (
+        <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {managementError}
+        </div>
+      )}
       {/* Admin Title & Active Exam Filter */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
@@ -434,6 +528,7 @@ export function AdminDashboard({
           { id: "resources", label: "Study Materials (Notes / PDF)", icon: FileText },
           { id: "questions", label: "Question Bank", icon: HelpCircle },
           { id: "tests", label: "Mock Tests & Practice", icon: Award },
+          ...(currentUser?.role === "ADMIN" ? [{ id: "plans", label: "Subscription Plans", icon: WalletCards }] : []),
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -696,6 +791,7 @@ export function AdminDashboard({
                       <span className="text-[10px] font-semibold text-slate-500">
                         {q.difficulty}
                       </span>
+                      <span className="text-[10px] font-semibold text-slate-500">{q.status}</span>
                     </div>
                     <div className="text-slate-500 text-[11px]">
                       +{q.positive_marks} / -{q.negative_marks} marks
@@ -734,6 +830,15 @@ export function AdminDashboard({
                     <div className="pt-2 text-[11px] text-slate-500 border-t border-slate-100">
                       <strong>Worked Solution:</strong> {q.explanation}
                     </div>
+                  )}
+                  {q.status !== "PUBLISHED" && currentUser?.role === "ADMIN" && (
+                    <button
+                      type="button"
+                      onClick={() => handlePublishQuestion(q.id)}
+                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+                    >
+                      Publish question
+                    </button>
                   )}
                 </div>
               ))}
@@ -791,9 +896,74 @@ export function AdminDashboard({
                   <span>Duration: {Math.round(t.duration_seconds / 60)} mins</span>
                   <span>Total Marks: {t.total_marks}</span>
                 </div>
+                  {t.status === "DRAFT" && currentUser?.role === "ADMIN" && (
+                    <button
+                      type="button"
+                      onClick={() => handlePublishTest(t.id)}
+                      className="mt-3 self-start rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+                    >
+                      Publish after validation
+                    </button>
+                  )}
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {activeTab === "plans" && currentUser?.role === "ADMIN" && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="text-base font-bold text-slate-900">Subscription plans</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-600">Prices are sent to Razorpay in minor currency units from this server-controlled form. Published plans appear on the pricing page.</p>
+            {billingPlans.length === 0 ? (
+              <p className="mt-5 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">No subscription plans have been created.</p>
+            ) : (
+              <div className="mt-4 divide-y divide-slate-100">
+                {billingPlans.map((plan) => (
+                  <div key={plan.id} className="flex items-center justify-between gap-3 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{plan.name}</p>
+                      <p className="text-xs text-slate-500">{new Intl.NumberFormat("en-IN", { style: "currency", currency: plan.currency, maximumFractionDigits: 0 }).format(plan.amount_minor / 100)} / {plan.interval_unit} · {plan.is_published ? "Published" : "Draft"}</p>
+                    </div>
+                    <span className="text-[11px] text-slate-500">{plan.included_exam_ids.length} exam(s)</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <form onSubmit={handleCreatePlan} className="space-y-4 rounded-xl border border-slate-200 bg-white p-5">
+            <h3 className="text-sm font-bold text-slate-900">Create plan</h3>
+            <label className="block text-xs font-medium text-slate-700">Plan name
+              <input value={planName} onChange={(event) => setPlanName(event.target.value)} required maxLength={160} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="GATE DA Monthly" />
+            </label>
+            <label className="block text-xs font-medium text-slate-700">Price (INR)
+              <input type="number" min="1" step="0.01" value={planPrice} onChange={(event) => setPlanPrice(event.target.value)} required className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="999" />
+            </label>
+            <label className="block text-xs font-medium text-slate-700">Billing interval
+              <select value={planInterval} onChange={(event) => setPlanInterval(event.target.value as "monthly" | "yearly")} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </label>
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-slate-700">Included examinations</legend>
+              {exams.map((exam) => (
+                <label key={exam.id} className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={planExamIds.includes(exam.id)} onChange={(event) => setPlanExamIds((ids) => event.target.checked ? [...ids, exam.id] : ids.filter((id) => id !== exam.id))} />
+                  {exam.code} — {exam.name}
+                </label>
+              ))}
+            </fieldset>
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" checked={planPublished} onChange={(event) => setPlanPublished(event.target.checked)} />
+              Publish after Razorpay plan creation
+            </label>
+            <button disabled={isSavingPlan} className="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+              {isSavingPlan ? "Creating provider plan…" : "Create Razorpay plan"}
+            </button>
+          </form>
         </div>
       )}
 

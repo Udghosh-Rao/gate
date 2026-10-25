@@ -38,14 +38,14 @@ class QuestionUpdateRequest(BaseModel):
     subject_id: Optional[UUID] = None
     topic_id: Optional[UUID] = None
     difficulty: Optional[str] = Field(None, pattern="^(EASY|MEDIUM|HARD)$")
-    status: Optional[str] = Field(None, pattern="^(DRAFT|IN_REVIEW|APPROVED|PUBLISHED|ARCHIVED)$")
     text: Optional[str] = None
     image_url: Optional[str] = None
     explanation: Optional[str] = None
-    positive_marks: Optional[float] = None
-    negative_marks: Optional[float] = None
+    positive_marks: Optional[float] = Field(None, ge=0)
+    negative_marks: Optional[float] = Field(None, ge=0)
     correct_numerical_answer: Optional[float] = None
-    numerical_tolerance: Optional[float] = None
+    numerical_tolerance: Optional[float] = Field(None, ge=0)
+    partial_credit: Optional[bool] = None
     options: Optional[List[QuestionOptionCreate]] = None
 
 
@@ -148,11 +148,22 @@ class TestCreateRequest(BaseModel):
     total_marks: float = Field(default=100.0, ge=1)
     result_release_policy: str = Field(default="IMMEDIATE", pattern="^(IMMEDIATE|AFTER_DEADLINE|MANUAL)$")
     explanation_release_policy: str = Field(default="WITH_RESULT", pattern="^(WITH_RESULT|AFTER_DEADLINE|MANUAL|NEVER)$")
+    result_release_at: Optional[datetime] = None
     is_retakeable: bool = True
     max_attempts: Optional[int] = None
+    is_paid: bool = False
     marking_scheme: Optional[dict] = None
     display_order: int = 0
     questions: List[TestQuestionAssign] = []
+
+    @model_validator(mode="after")
+    def validate_release_schedule(self):
+        if (
+            self.result_release_policy == "AFTER_DEADLINE"
+            or self.explanation_release_policy == "AFTER_DEADLINE"
+        ) and self.result_release_at is None:
+            raise ValueError("result_release_at is required for after-deadline release policies")
+        return self
 
 
 class TestResponse(BaseModel):
@@ -169,8 +180,10 @@ class TestResponse(BaseModel):
     status: str
     result_release_policy: str
     explanation_release_policy: str
+    result_release_at: Optional[datetime] = None
     is_retakeable: bool
     max_attempts: Optional[int] = None
+    is_paid: bool = False
     display_order: int
     created_at: datetime
 
