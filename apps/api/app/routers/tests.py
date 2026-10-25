@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin, require_admin_or_content_manager, require_student
 from app.models.user import User, UserRole
 from app.schemas.test import (
-    QuestionCreateRequest, QuestionResponse,
+    QuestionCreateRequest, QuestionUpdateRequest, QuestionResponse,
     TestSeriesCreateRequest, TestSeriesResponse,
     TestCreateRequest, TestResponse,
     AttemptCreateResponse, AnswerSaveRequest, AnswerSaveResponse,
@@ -63,6 +63,24 @@ async def list_questions(
         limit=limit,
         offset=offset,
     )
+
+
+@router.patch("/admin/questions/{question_id}", response_model=QuestionResponse)
+async def update_question(
+    question_id: UUID,
+    data: QuestionUpdateRequest,
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Edit an existing question's text, options, marks, difficulty, and status."""
+    try:
+        service = QuestionService(db)
+        result = await service.update_question(question_id, data)
+        if not result:
+            raise HTTPException(status_code=404, detail="Question not found")
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/admin/questions/{question_id}/status", response_model=QuestionResponse)

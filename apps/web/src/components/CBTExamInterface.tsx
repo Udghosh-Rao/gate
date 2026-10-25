@@ -42,6 +42,20 @@ export function CBTExamInterface({
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
+
+  const persistAnswer = async (qId: string, updated: AttemptAnswer) => {
+    setSyncStatus("saving");
+    setSyncErrorMsg(null);
+    try {
+      await saveAttemptAnswer(attemptId, qId, updated);
+      setSyncStatus("saved");
+    } catch (err: unknown) {
+      setSyncStatus("error");
+      setSyncErrorMsg(err instanceof Error ? err.message : "Failed to sync answer to server");
+    }
+  };
 
   // Initialize answers map and mark first question as visited
   useEffect(() => {
@@ -113,7 +127,7 @@ export function CBTExamInterface({
         selected_option_ids: newSelected,
         is_visited: true,
       };
-      saveAttemptAnswer(attemptId, currentQ.id, updated);
+      persistAnswer(currentQ.id, updated);
       return { ...prev, [currentQ.id]: updated };
     });
   };
@@ -143,7 +157,7 @@ export function CBTExamInterface({
         numerical_answer: numVal,
         is_visited: true,
       };
-      saveAttemptAnswer(attemptId, currentQ.id, updated);
+      persistAnswer(currentQ.id, updated);
       return { ...prev, [currentQ.id]: updated };
     });
   };
@@ -157,7 +171,7 @@ export function CBTExamInterface({
         selected_option_ids: [],
         numerical_answer: undefined,
       };
-      saveAttemptAnswer(attemptId, currentQ.id, updated);
+      persistAnswer(currentQ.id, updated);
       return { ...prev, [currentQ.id]: updated };
     });
   };
@@ -176,7 +190,7 @@ export function CBTExamInterface({
         ...existing,
         is_marked_for_review: !existing.is_marked_for_review,
       };
-      saveAttemptAnswer(attemptId, currentQ.id, updated);
+      persistAnswer(currentQ.id, updated);
       return { ...prev, [currentQ.id]: updated };
     });
 
@@ -265,7 +279,24 @@ export function CBTExamInterface({
         </div>
 
         {/* Center / Timer & Calculator */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {syncStatus === "saving" && (
+            <span className="text-[11px] text-slate-400 font-medium animate-pulse hidden md:inline">
+              Syncing answer...
+            </span>
+          )}
+          {syncStatus === "saved" && (
+            <span className="text-[11px] text-emerald-400 font-medium hidden md:inline">
+              ✓ Saved
+            </span>
+          )}
+          {syncStatus === "error" && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-rose-400 bg-rose-950/60 border border-rose-800/80 px-2 py-0.5 rounded font-medium" title={syncErrorMsg || "Failed to persist answer"}>
+              <AlertCircle className="w-3 h-3 text-rose-400" />
+              <span>Sync Failed</span>
+            </span>
+          )}
+
           <button
             onClick={() => setIsCalculatorOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-cyan-400 border border-slate-700 transition-colors"

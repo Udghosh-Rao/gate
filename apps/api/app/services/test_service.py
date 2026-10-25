@@ -154,12 +154,28 @@ class TestService:
         return result.scalar_one_or_none()
 
     async def publish_test(self, test_id: UUID) -> TestResponse | None:
+        """Publish a test. Validates that:
+        - The test has at least one question attached.
+        - All attached questions have PUBLISHED status (unpublished questions
+          must not be visible to students).
+        """
+        from app.models.question import Question, QuestionStatus
         test = await self.get_test_by_id(test_id)
         if not test:
             return None
         # Validate: test must have questions
         if not test.test_questions:
             raise ValueError("Cannot publish a test with no questions")
+        # Validate: all questions must be PUBLISHED
+        for tq in test.test_questions:
+            q = tq.question
+            if q is None:
+                raise ValueError("Test contains a reference to a question that no longer exists")
+            if q.status != QuestionStatus.PUBLISHED:
+                raise ValueError(
+                    f"Question '{q.text[:60]}...' (id={q.id}) is not published. "
+                    "All questions must be published before the test can be published."
+                )
         test.status = TestStatus.PUBLISHED
         await self.db.flush()
         await self.db.refresh(test)
@@ -204,7 +220,14 @@ class AttemptService:
             now = datetime.now(timezone.utc)
             if existing_attempt.expires_at and ensure_utc(existing_attempt.expires_at) <= now:
                 existing_attempt.status = AttemptStatus.EXPIRED
+                existing_attempt.submitted_at = ensure_utc(existing_attempt.expires_at)
                 await self.db.flush()
+                # Evaluate the expired attempt so student gets a score
+                try:
+                    scoring = ScoringService(self.db)
+                    await scoring.evaluate_attempt_idempotent(existing_attempt.id)
+                except Exception:
+                    pass  # Evaluation failure must not block starting a new attempt
             else:
                 # Resume — load questions
                 questions = await self._load_test_questions_for_student(test_id)
@@ -301,8 +324,8 @@ class AttemptService:
                 question_type=q.question_type.value,
                 text=q.text,
                 image_url=q.image_url,
-                positive_marks=tq.positive_marks or q.positive_marks,
-                negative_marks=tq.negative_marks or q.negative_marks,
+                positive_marks=tq.positive_marks if tq.positive_marks is not None else q.positive_marks,
+                negative_marks=tq.negative_marks if tq.negative_marks is not None else q.negative_marks,
                 options=options,
             ))
         return questions
@@ -362,8 +385,34 @@ class AttemptService:
     async def submit_attempt(
         self, attempt_id: UUID, student_id: UUID
     ) -> AttemptSubmitResponse:
-        """Finalize an attempt — manual submission."""
-        attempt = await self._get_valid_attempt(attempt_id, student_id)
+        """Finalize an attempt — manual submission.
+
+        Idempotent: if the attempt is already SUBMITTED or EVALUATED, return
+        the existing state instead of raising an error. This makes repeated
+        submission safe across network retries and duplicate requests.
+        """
+        # Load attempt with ownership check but allow already-finalized state
+        result = await self.db.execute(
+            select(Attempt).where(Attempt.id == attempt_id)
+        )
+        attempt = result.scalar_one_or_none()
+        if not attempt:
+            raise ValueError("Attempt not found")
+        if attempt.student_id != student_id:
+            raise PermissionError("You do not own this attempt")
+
+        # Already finalized — return existing state (idempotent)
+        if attempt.status in (AttemptStatus.SUBMITTED, AttemptStatus.EVALUATED):
+            return AttemptSubmitResponse(
+                id=attempt.id,
+                status=attempt.status.value,
+                submitted_at=attempt.submitted_at,
+                message="Test was already submitted",
+            )
+
+        if attempt.status not in (AttemptStatus.IN_PROGRESS, AttemptStatus.CREATED):
+            raise ValueError(f"Cannot submit an attempt with status: {attempt.status.value}")
+
         now = datetime.now(timezone.utc)
         attempt.status = AttemptStatus.SUBMITTED
         attempt.submitted_at = now
@@ -381,7 +430,12 @@ class AttemptService:
     async def _get_valid_attempt(
         self, attempt_id: UUID, student_id: UUID
     ) -> Attempt:
-        """Load and validate an attempt — checks ownership and status."""
+        """Load and validate an attempt — checks ownership and status.
+
+        When an attempt is found to be expired, we commit the expiry update
+        immediately via flush before raising so the status change cannot be
+        rolled back by the caller's exception handler discarding the transaction.
+        """
         result = await self.db.execute(
             select(Attempt).where(Attempt.id == attempt_id)
         )
@@ -393,12 +447,14 @@ class AttemptService:
         if attempt.status not in (AttemptStatus.IN_PROGRESS, AttemptStatus.CREATED):
             raise ValueError("This attempt is already finalized")
 
-        # Check expiry
+        # Check expiry — persist the status change before raising so the
+        # update survives even if the caller rolls back the outer transaction.
         now = datetime.now(timezone.utc)
         if attempt.expires_at and ensure_utc(attempt.expires_at) <= now:
             attempt.status = AttemptStatus.EXPIRED
-            attempt.submitted_at = attempt.expires_at
+            attempt.submitted_at = ensure_utc(attempt.expires_at)
             await self.db.flush()
+            await self.db.commit()  # Durably persist expiry before raising
             raise ValueError("This attempt has expired")
 
         return attempt
@@ -481,8 +537,10 @@ class ScoringService:
 
         for tq in test_questions:
             q = tq.question
-            pos_marks = tq.positive_marks or q.positive_marks
-            neg_marks = tq.negative_marks or q.negative_marks
+            # Use 'is not None' so that a zero-mark override on the test question
+            # is honoured rather than silently falling through to the question default.
+            pos_marks = tq.positive_marks if tq.positive_marks is not None else q.positive_marks
+            neg_marks = tq.negative_marks if tq.negative_marks is not None else q.negative_marks
             max_possible += pos_marks
 
             answer = answers_map.get(str(q.id))
@@ -537,6 +595,17 @@ class ScoringService:
             end_time = attempt.submitted_at or datetime.now(timezone.utc)
             time_taken = int((ensure_utc(end_time) - ensure_utc(attempt.started_at)).total_seconds())
 
+        # Determine result visibility from the test's configured release policy.
+        # IMMEDIATE → release straight away; anything else → hold for admin release.
+        test_result = await self.db.execute(
+            select(Test).where(Test.id == attempt.test_id)
+        )
+        test_obj = test_result.scalar_one_or_none()
+        is_released = (
+            test_obj is not None
+            and test_obj.result_release_policy == ResultReleasePolicy.IMMEDIATE
+        )
+
         new_result = Result(
             attempt_id=attempt_id,
             total_score=total_score,
@@ -549,7 +618,7 @@ class ScoringService:
             percentage_score=round(percentage, 2),
             time_taken_seconds=time_taken,
             question_results=question_results,
-            is_released=True,  # Per result_release_policy — simplified for MVP
+            is_released=is_released,
         )
         self.db.add(new_result)
         attempt.status = AttemptStatus.EVALUATED

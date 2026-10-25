@@ -1,11 +1,14 @@
 """Exam public and admin API routes."""
 
+import os
+import uuid as _uuid
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_admin, require_admin_or_content_manager
 from app.models.user import User, UserRole
@@ -231,4 +234,82 @@ async def delete_resource(
     if not success:
         raise HTTPException(status_code=404, detail="Resource not found")
     return None
+
+
+# Allowed MIME types for study material uploads
+_ALLOWED_UPLOAD_MIME_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "text/plain",
+}
+
+_MAX_UPLOAD_BYTES = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
+@router.post(
+    "/admin/exams/{exam_id}/resources/upload",
+    response_model=ResourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_study_material(
+    exam_id: UUID,
+    file: Annotated[UploadFile, File(description="PDF or image file to upload as study material")],
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    title: str = "Uploaded Study Material",
+    description: Optional[str] = None,
+    topic_id: Optional[UUID] = None,
+):
+    """Upload a PDF or image file as study material.
+
+    Files are stored in the configured UPLOAD_DIR and a Resource record is created
+    pointing to the server-hosted URL. Maximum file size is MAX_UPLOAD_SIZE_MB.
+    """
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in _ALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=(
+                f"File type '{content_type}' is not permitted. "
+                "Allowed types: PDF, PNG, JPEG, GIF, plain text."
+            ),
+        )
+
+    # Read and size-check the file
+    contents = await file.read()
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the maximum upload size of {settings.MAX_UPLOAD_SIZE_MB} MB.",
+        )
+
+    # Build a safe filename: <uuid>_<original_filename>
+    safe_name = f"{_uuid.uuid4()}_{file.filename or 'file'}"
+    # Sanitise: keep only alphanumeric, dot, dash, underscore
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in safe_name)
+    dest_path = os.path.join(settings.UPLOAD_DIR, safe_name)
+
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    with open(dest_path, "wb") as f:
+        f.write(contents)
+
+    # Relative URL served by the StaticFiles mount at /uploads/
+    file_url = f"/uploads/{safe_name}"
+
+    resource_data = ResourceCreateRequest(
+        title=title,
+        description=description,
+        resource_type="notes",
+        file_url=file_url,
+        file_size_bytes=len(contents),
+        mime_type=content_type,
+        topic_id=topic_id,
+        is_published=False,  # Admin must explicitly publish
+    )
+    service = ExamService(db)
+    return await service.create_resource(
+        exam_id=exam_id, data=resource_data, uploaded_by=current_user.id
+    )
 

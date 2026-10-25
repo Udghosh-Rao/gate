@@ -20,15 +20,18 @@ from app.routers import auth, exams, tests, admin
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager: initialize DB tables on startup."""
-    # Ensure upload directory exists
+    # Ensure upload directory exists BEFORE mounting static files
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    
+
+    # Mount uploads as static files now that directory is guaranteed to exist
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
     # Create tables if not present
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     yield
-    
+
     # Teardown
     await engine.dispose()
 
@@ -50,10 +53,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Static Files for resources and uploads
-if os.path.exists(settings.UPLOAD_DIR):
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 # Include Routers under API prefix and root
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)

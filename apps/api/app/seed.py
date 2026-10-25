@@ -431,16 +431,26 @@ async def seed():
             test_mock1 = Test(
                 test_series_id=test_series.id,
                 exam_id=gate_da.id,
-                title="GATE DA All India Open Mock Test 1",
+                title="[SAMPLE] GATE DA Demo Test — 5 Questions",
                 slug="gate-da-all-india-open-mock-1",
-                description="Simulated GATE DA CBT testing environment with balanced coverage of Probability, Linear Algebra, Machine Learning, and AI.",
+                description=(
+                    "Developer demo test with 5 sample questions covering MCQ, MSQ, and NAT formats. "
+                    "This is NOT a full-length mock examination. "
+                    "Full mock tests will be added by the admin via the Content Management System."
+                ),
                 duration_seconds=10800,  # 3 hours
-                total_marks=7.0,  # For the seeded sample questions
+                total_marks=7.0,
                 total_questions=5,
                 status=TestStatus.PUBLISHED,
                 result_release_policy=ResultReleasePolicy.IMMEDIATE,
                 explanation_release_policy=ExplanationReleasePolicy.WITH_RESULT,
-                instructions="1. The test contains 5 questions representing different GATE formats: MCQ, MSQ, and NAT.\n2. Server timing is strictly authoritative.\n3. You can flag questions for review and clear selections before final submission.\n4. Detailed analysis and question-level explanations are available immediately upon submission.",
+                instructions=(
+                    "DEMO TEST — This test contains only 5 sample questions for platform demonstration.\n"
+                    "1. The 5 questions cover MCQ, MSQ, and NAT formats used in GATE.\n"
+                    "2. Server timing is authoritative. The timer is set to 3 hours for demo convenience.\n"
+                    "3. You can flag questions for review and clear answers before submitting.\n"
+                    "4. Scores and explanations are released immediately after submission."
+                ),
                 display_order=1,
             )
             session.add(test_mock1)

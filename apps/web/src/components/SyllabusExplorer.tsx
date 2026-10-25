@@ -195,7 +195,6 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-500 px-1">
               <span>Curriculum Chapters &amp; Problem Sets</span>
-              <span className="text-[11px] text-emerald-600 font-semibold">100% Exam Fidelity</span>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">
@@ -210,9 +209,6 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                     </span>
                     <span className="text-slate-800 font-medium">{topic}</span>
                   </div>
-                  <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 shrink-0">
-                    Syllabus Verified
-                  </span>
                 </div>
               ))}
             </div>

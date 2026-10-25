@@ -128,8 +128,12 @@ export default function Home() {
       setActiveAttemptId(attempt.id);
       setActiveQuestions(attempt.questions);
       setCurrentTab("cbt");
-    } catch (err) {
-      console.error("Failed to start attempt:", err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to start test attempt.";
+      alert(msg);
+      if (msg.includes("logged in")) {
+        handleOpenAuth("login");
+      }
       setCurrentTab("tests");
     }
   };
@@ -360,7 +364,7 @@ function HomePage({
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
                 <span>GATE 2025/2026 Academic Series</span>
                 <span className="text-blue-300">•</span>
-                <span className="text-blue-700">Official TCS iON Simulator</span>
+                <span className="text-blue-700">Early Access — Free for Aspirants</span>
               </div>
 
               {/* Main Headline */}
@@ -414,27 +418,10 @@ function HomePage({
                 </button>
               </div>
 
-              {/* Social Proof Bar */}
               <div className="flex flex-wrap items-center gap-3.5 pt-3">
-                <div className="flex -space-x-1.5 shrink-0">
-                  {["IISc", "IIT-B", "IIT-D", "IIT-M"].map((lbl, idx) => (
-                    <div
-                      key={idx}
-                      className="w-7 h-7 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-[9px] font-black text-white shadow-xs"
-                    >
-                      {lbl}
-                    </div>
-                  ))}
-                </div>
-                <div className="text-xs text-slate-600 flex items-center gap-1.5">
-                  <div className="flex items-center text-amber-500">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star key={s} className="w-3.5 h-3.5 fill-current" />
-                    ))}
-                  </div>
-                  <span className="font-bold text-slate-900">4.9/5</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-slate-600 font-medium">10,000+ Top GATE Aspirants across India</span>
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Free early access — no credit card required
                 </div>
               </div>
             </div>
@@ -940,71 +927,27 @@ function HomePage({
         </div>
       </section>
 
-      {/* ── 7. CANDIDATE TESTIMONIALS ───────────────────────────────────────── */}
+      {/* ── 7. CANDIDATE FEEDBACK ──────────────────────────────────────────── */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold mb-2">
-            Aspirant Experiences
+            Early Feedback
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900">
-            Real Feedback from Serious Aspirants
+            What Beta Testers Are Saying
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            How students are preparing for GATE DA &amp; CS using ExamPrep.
+            Collected from our private beta. Testimonials will be updated as the platform grows.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            {
-              name: "Ananya Sharma",
-              score: "GATE DA 2024 Aspirant • Score 782",
-              text: "The exact replication of the TCS iON interface and virtual calculator was the game-changer for me. No other website provides realistic MSQ and NAT drills with such rigorous explanations.",
-              initials: "AS",
-              college: "IIT Bombay M.Tech AI Admit",
-            },
-            {
-              name: "Rohan Kulkarni",
-              score: "GATE CS Candidate • AIR 89",
-              text: "Most test series have poorly formatted questions or broken keys. ExamPrep has deterministic server marking, so your timing and marks are 100% accurate. Highly recommend it.",
-              initials: "RK",
-              college: "IISc CSA Admit",
-            },
-            {
-              name: "Pooja Venkat",
-              score: "Self-Paced Aspirant • Working Professional",
-              text: "I didn't have time to watch 500 hours of video lectures. The organized topic notes and targeted section drills allowed me to prepare during weekends with complete clarity.",
-              initials: "PV",
-              college: "NIT Trichy AI Candidate",
-            },
-          ].map((t, idx) => (
-            <div
-              key={idx}
-              className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-center gap-1 text-amber-500 mb-3">
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <Star key={s} className="w-3.5 h-3.5 fill-current" />
-                  ))}
-                </div>
-                <p className="text-xs text-slate-600 italic leading-relaxed mb-4">
-                  &ldquo;{t.text}&rdquo;
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-900 font-bold flex items-center justify-center text-xs">
-                  {t.initials}
-                </div>
-                <div>
-                  <div className="font-bold text-xs text-slate-900">{t.name}</div>
-                  <div className="text-[10px] text-blue-700 font-medium">{t.college}</div>
-                  <div className="text-[10px] text-slate-400">{t.score}</div>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="p-8 rounded-2xl bg-blue-50 border border-blue-200 text-center">
+          <p className="text-sm text-blue-800 font-medium">
+            We are in early access. Verified testimonials from real candidates will appear here as they complete full mock tests and share feedback.
+          </p>
+          <p className="text-xs text-blue-600 mt-2">
+            Be among the first — try the free sample test and share your experience.
+          </p>
         </div>
       </section>
 
@@ -1025,8 +968,8 @@ function HomePage({
         <div className="space-y-3">
           {[
             {
-              q: "Does ExamPrep replicate the official TCS iON CBT exam screen?",
-              a: "Yes. Our Computer-Based Test simulator is built specifically to match the official GATE exam environment, including the exact color codes for the question palette (Answered, Not Answered, Marked for Review), section navigation, and an on-screen scientific calculator.",
+              q: "Does ExamPrep replicate the official GATE CBT exam screen?",
+              a: "Our Computer-Based Test interface is designed to closely follow the GATE CBT format, including MCQ, MSQ, and NAT question types, a question palette showing attempt status, and section navigation. We are actively improving fidelity based on beta tester feedback.",
             },
             {
               q: "How does marking work for MSQ and NAT questions?",
