@@ -62,7 +62,40 @@ class AuthService:
             refresh_token=refresh_token,
         )
 
+    async def refresh_tokens(self, refresh_token_str: str) -> TokenResponse:
+        """Validate a refresh token and return a new access/refresh token pair."""
+        from app.core.security import decode_token
+        try:
+            payload = decode_token(refresh_token_str)
+            if payload.get("type") != "refresh":
+                raise ValueError("Invalid token type: expected refresh token")
+            user_id = payload.get("sub")
+            if not user_id:
+                raise ValueError("Invalid token payload")
+        except Exception as e:
+            raise ValueError(f"Invalid refresh token: {str(e)}")
+
+        user = await self.get_user_by_id(UUID(user_id))
+        if not user or user.status != UserStatus.ACTIVE:
+            raise ValueError("User not found or account is not active")
+
+        # Invalidate old refresh token
+        from app.core.security import revoke_token
+        revoke_token(refresh_token_str)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+            role=user.role.value,
+        )
+        new_refresh_token = create_refresh_token(subject=str(user.id))
+
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=new_refresh_token,
+        )
+
     async def get_user_by_id(self, user_id: UUID) -> User | None:
         """Load a user by ID."""
         result = await self.db.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
+

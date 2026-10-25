@@ -106,7 +106,18 @@ async def list_test_series(
     exam_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """List test series for an exam."""
+    """List PUBLISHED test series for an exam (public)."""
+    service = TestService(db)
+    return await service.get_published_test_series(exam_id)
+
+
+@router.get("/admin/exams/{exam_id}/test-series", response_model=list[TestSeriesResponse])
+async def list_admin_test_series(
+    exam_id: UUID,
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List all test series including drafts (admin/content manager only)."""
     service = TestService(db)
     return await service.get_test_series(exam_id)
 
@@ -133,13 +144,22 @@ async def create_test(
 async def list_tests(
     exam_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """List PUBLISHED tests for an exam (public). Draft/archived tests are never exposed."""
+    service = TestService(db)
+    return await service.get_published_tests(exam_id)
+
+
+@router.get("/admin/exams/{exam_id}/tests", response_model=list[TestResponse])
+async def list_admin_tests(
+    exam_id: UUID,
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     test_status: Optional[str] = Query(None, alias="status"),
 ):
-    """List tests for an exam."""
+    """List all tests including drafts (admin/content manager only)."""
     service = TestService(db)
-    if test_status:
-        return await service.get_tests(exam_id, status_filter=test_status)
-    return await service.get_published_tests(exam_id)
+    return await service.get_tests(exam_id, status_filter=test_status)
 
 
 @router.get("/test-series/{series_id}/tests", response_model=list[TestResponse])
@@ -147,9 +167,9 @@ async def list_series_tests(
     series_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """List tests belonging to a test series."""
+    """List PUBLISHED tests belonging to a test series (public)."""
     service = TestService(db)
-    return await service.get_tests_by_series(series_id)
+    return await service.get_published_tests_by_series(series_id)
 
 
 @router.post("/admin/tests/{test_id}/publish", response_model=TestResponse)
@@ -210,19 +230,20 @@ async def submit_attempt(
     current_user: Annotated[User, Depends(require_student)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Submit a test attempt for evaluation."""
+    """Submit a test attempt for evaluation. Idempotent: repeated calls are safe."""
     try:
         service = AttemptService(db)
         result = await service.submit_attempt(attempt_id, student_id=current_user.id)
 
-        # Auto-evaluate on submission
+        # Auto-evaluate on submission (idempotent — won't re-score if already done)
         scoring = ScoringService(db)
-        await scoring.evaluate_attempt(attempt_id)
+        await scoring.evaluate_attempt_idempotent(attempt_id)
 
         return result
-    except (ValueError, PermissionError) as e:
-        status_code = status.HTTP_403_FORBIDDEN if isinstance(e, PermissionError) else status.HTTP_400_BAD_REQUEST
-        raise HTTPException(status_code=status_code, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/attempts/{attempt_id}/result", response_model=ResultResponse)
@@ -231,13 +252,35 @@ async def get_result(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get the result for a completed attempt."""
+    """Get the result for a completed attempt.
+
+    Security: Students can only access their own results. Admins can access any.
+    """
+    # Load the attempt FIRST to verify ownership BEFORE leaking any result data
+    attempt_service = AttemptService(db)
+    attempt = await attempt_service.get_attempt_by_id(attempt_id)
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+
+    # Critical: enforce ownership — students cannot read other students' results
+    if current_user.role != UserRole.ADMIN:
+        if attempt.student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not authorized to access this result",
+            )
+
     scoring = ScoringService(db)
     result = await scoring.get_result(attempt_id)
     if not result:
-        raise HTTPException(status_code=404, detail="Result not found or not yet released")
+        raise HTTPException(status_code=404, detail="Result not found or not yet available")
 
-    # Verify ownership (students can only see their own; admins can see all)
+    if not result.is_released and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Result has not been released yet",
+        )
+
     return ResultResponse.model_validate(result)
 
 
@@ -256,8 +299,9 @@ async def list_student_attempts(
             "status": a.status.value,
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
-            "score": a.result.total_score if getattr(a, "result", None) else None,
-            "accuracy_percentage": a.result.accuracy_percentage if getattr(a, "result", None) else None,
+            # Use 'is not None' — score of 0 is a valid result and must not be hidden
+            "score": float(a.result.total_score) if (getattr(a, "result", None) is not None) else None,
+            "accuracy_percentage": a.result.accuracy_percentage if (getattr(a, "result", None) is not None) else None,
         }
         for a in attempts
     ]

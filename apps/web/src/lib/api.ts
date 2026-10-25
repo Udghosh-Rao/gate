@@ -453,28 +453,47 @@ export async function fetchTestById(testId: string): Promise<Test | undefined> {
   return tests.find((t) => t.id === testId) || FALLBACK_TESTS[0];
 }
 
-export async function startAttempt(testId: string, token?: string): Promise<{ id: string; questions: AttemptQuestion[] }> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-
-    const res = await fetch(`${API_BASE}/tests/${testId}/attempts`, {
-      method: "POST",
-      headers,
-    });
-    if (!res.ok) throw new Error();
-    const data = await res.json();
-    return {
-      id: data.id || "attempt-" + Date.now(),
-      questions: data.questions || FALLBACK_CBT_QUESTIONS,
-    };
-  } catch {
-    return {
-      id: "attempt-" + Date.now(),
-      questions: FALLBACK_CBT_QUESTIONS,
-    };
+export async function startAttempt(
+  testId: string,
+  token?: string
+): Promise<{ id: string; questions: AttemptQuestion[]; expires_at: string }> {
+  const authToken = token || getAuthToken();
+  if (!authToken) {
+    throw new Error("You must be logged in to start a test.");
   }
+
+  const res = await fetch(`${API_BASE}/tests/${testId}/attempts`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+  });
+
+  if (res.status === 401) {
+    throw new Error("Your session has expired. Please log in again.");
+  }
+  if (res.status === 403) {
+    throw new Error("You do not have permission to start this test.");
+  }
+  if (res.status === 400) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Cannot start this test. It may be unavailable or you have reached the attempt limit.");
+  }
+  if (!res.ok) {
+    throw new Error("Failed to start test. Please try again.");
+  }
+
+  const data = await res.json();
+  if (!data.id || !data.questions) {
+    throw new Error("Invalid response from server. Please try again.");
+  }
+
+  return {
+    id: data.id,
+    questions: data.questions,
+    expires_at: data.expires_at,
+  };
 }
 
 export async function saveAttemptAnswer(
@@ -500,143 +519,52 @@ export async function saveAttemptAnswer(
 
 export async function submitAttempt(
   attemptId: string,
-  answers: Record<string, AttemptAnswer>,
-  questions: AttemptQuestion[],
   token?: string
 ): Promise<Result> {
-  try {
-    const authToken = token || getAuthToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-
-    const res = await fetch(`${API_BASE}/attempts/${attemptId}/submit`, {
-      method: "POST",
-      headers,
-    });
-    if (res.ok) {
-      const resResult = await fetch(`${API_BASE}/attempts/${attemptId}/result`, { headers });
-      if (resResult.ok) {
-        return await resResult.json();
-      }
-    }
-  } catch {
-    // evaluate locally with authentic GATE scoring
+  const authToken = token || getAuthToken();
+  if (!authToken) {
+    throw new Error("You must be logged in to submit a test.");
   }
 
-  // Local evaluation engine
-  let totalScore = 0;
-  let correctCount = 0;
-  let incorrectCount = 0;
-  let unansweredCount = 0;
-  let maxPossible = 0;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${authToken}`,
+  };
 
-  const questionResults = questions.map((q) => {
-    maxPossible += q.positive_marks;
-    const ans = answers[q.id];
-
-    let isCorrect = false;
-    let marksAwarded = 0;
-    let correctOptionIds: string[] = [];
-    let correctNumerical: number | undefined = undefined;
-
-    if (q.id === "q-1") {
-      correctOptionIds = ["opt-1b"]; // B (1/3)
-      if (ans && ans.selected_option_ids?.includes("opt-1b")) {
-        isCorrect = true;
-        marksAwarded = 1.0;
-      } else if (ans && ans.selected_option_ids && ans.selected_option_ids.length > 0) {
-        marksAwarded = -0.33;
-      }
-    } else if (q.id === "q-2") {
-      correctOptionIds = ["opt-2a", "opt-2b", "opt-2c"]; // A, B, C
-      const selected = ans?.selected_option_ids || [];
-      const hasAll = ["opt-2a", "opt-2b", "opt-2c"].every((id) => selected.includes(id));
-      const hasExtra = selected.includes("opt-2d");
-      if (hasAll && !hasExtra) {
-        isCorrect = true;
-        marksAwarded = 2.0;
-      } else if (selected.length > 0) {
-        marksAwarded = 0.0; // MSQ has NO negative marking in GATE
-      }
-    } else if (q.id === "q-3") {
-      correctNumerical = 0.67;
-      if (ans && ans.numerical_answer !== undefined && ans.numerical_answer !== null) {
-        if (Math.abs(ans.numerical_answer - 0.67) <= 0.02) {
-          isCorrect = true;
-          marksAwarded = 2.0;
-        }
-      }
-    } else if (q.id === "q-4") {
-      correctOptionIds = ["opt-4a"];
-      if (ans && ans.selected_option_ids?.includes("opt-4a")) {
-        isCorrect = true;
-        marksAwarded = 1.0;
-      } else if (ans && ans.selected_option_ids && ans.selected_option_ids.length > 0) {
-        marksAwarded = -0.33;
-      }
-    } else if (q.id === "q-5") {
-      correctNumerical = 448.0;
-      if (ans && ans.numerical_answer === 448.0) {
-        isCorrect = true;
-        marksAwarded = 1.0;
-      }
-    }
-
-    if (!ans || (!ans.selected_option_ids?.length && ans.numerical_answer === undefined)) {
-      unansweredCount++;
-    } else if (isCorrect) {
-      correctCount++;
-      totalScore += marksAwarded;
-    } else {
-      incorrectCount++;
-      totalScore += marksAwarded;
-    }
-
-    return {
-      question_id: q.id,
-      question_type: q.question_type,
-      question_text: q.text,
-      options: q.options as any,
-      student_selected_options: ans?.selected_option_ids,
-      student_numerical_answer: ans?.numerical_answer,
-      correct_option_ids: correctOptionIds,
-      correct_numerical_answer: correctNumerical,
-      is_correct: isCorrect,
-      marks_awarded: Math.round(marksAwarded * 100) / 100,
-      explanation:
-        q.id === "q-1"
-          ? "Sample space: S = {HH, HT, TH, TT}. Given at least one flip is Heads, possible outcomes are {HH, HT, TH}. Both Heads is {HH}. P(B|A) = 1/3."
-          : q.id === "q-2"
-          ? "A real symmetric matrix is always orthogonally diagonalizable. Trace = 2 + 2 + 5 = 9. Determinant = 2 × 2 × 5 = 20. All eigenvalues are positive, so A is positive definite."
-          : q.id === "q-3"
-          ? "Precision = TP / Predicted Positives = 30 / 40 = 0.75. Recall = TP / Actual Positives = 30 / 50 = 0.60. F1 = 2 × (0.75 × 0.60) / (0.75 + 0.60) = 0.90 / 1.35 ≈ 0.67."
-          : q.id === "q-4"
-          ? "In tree search, A* is admissible (optimal) if h(n) ≤ h*(n) for all nodes (admissible heuristic)."
-          : "By Master Theorem / recursion tree: T(n) = n·log₂(n) + n. For n = 64: 64·6 + 64 = 384 + 64 = 448.",
-    };
+  const submitRes = await fetch(`${API_BASE}/attempts/${attemptId}/submit`, {
+    method: "POST",
+    headers,
   });
 
-  const answered = correctCount + incorrectCount;
-  const accuracy = answered > 0 ? (correctCount / answered) * 100 : 0;
-  const percentage = maxPossible > 0 ? (totalScore / maxPossible) * 100 : 0;
+  if (submitRes.status === 401) {
+    throw new Error("Your session has expired. Please log in again.");
+  }
+  if (submitRes.status === 403) {
+    throw new Error("You are not authorized to submit this attempt.");
+  }
+  if (!submitRes.ok) {
+    const err = await submitRes.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to submit test. Please try again.");
+  }
 
-  return {
-    id: "result-" + Date.now(),
-    attempt_id: attemptId,
-    total_score: Math.max(0, Math.round(totalScore * 100) / 100),
-    max_possible_marks: maxPossible,
-    correct_count: correctCount,
-    incorrect_count: incorrectCount,
-    unanswered_count: unansweredCount,
-    total_questions: questions.length,
-    accuracy_percentage: Math.round(accuracy * 10) / 10,
-    percentage_score: Math.round(percentage * 10) / 10,
-    time_taken_seconds: 480,
-    question_results: questionResults,
-    is_released: true,
-    evaluated_at: new Date().toISOString(),
-  };
+  // Fetch the evaluated result (may need a brief retry if evaluation is async)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const resultRes = await fetch(`${API_BASE}/attempts/${attemptId}/result`, { headers });
+    if (resultRes.ok) {
+      return await resultRes.json();
+    }
+    if (resultRes.status === 403) {
+      throw new Error("Result has not been released yet.");
+    }
+    // Wait 500ms before retry (evaluation may be in progress)
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  throw new Error("Result is not yet available. Please check your attempt history.");
 }
+
+
+
 
 export async function apiCreateExam(examData: Partial<Exam>, token?: string): Promise<Exam | null> {
   try {

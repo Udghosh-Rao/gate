@@ -54,6 +54,14 @@ class ExamService:
     async def get_active_exams(self) -> List[ExamResponse]:
         return await self.get_exams(status_filter="ACTIVE")
 
+    async def get_active_exam_by_slug(self, slug: str) -> ExamResponse | None:
+        """Fetch exam by slug strictly ensuring it is active for public access."""
+        result = await self.db.execute(
+            select(Exam).where(Exam.slug == slug.lower(), Exam.status == ExamStatus.ACTIVE)
+        )
+        exam = result.scalar_one_or_none()
+        return ExamResponse.model_validate(exam) if exam else None
+
     async def get_exam_by_slug(self, slug: str) -> ExamResponse | None:
         result = await self.db.execute(select(Exam).where(Exam.slug == slug.lower()))
         exam = result.scalar_one_or_none()
@@ -62,6 +70,7 @@ class ExamService:
     async def get_exam_by_id(self, exam_id: UUID) -> Exam | None:
         result = await self.db.execute(select(Exam).where(Exam.id == exam_id))
         return result.scalar_one_or_none()
+
 
     async def update_exam(self, exam_id: UUID, data: ExamUpdateRequest) -> ExamResponse | None:
         exam = await self.get_exam_by_id(exam_id)

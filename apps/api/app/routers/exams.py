@@ -26,12 +26,9 @@ router = APIRouter(tags=["Exams"])
 @router.get("/exams", response_model=list[ExamResponse])
 async def list_exams(
     db: Annotated[AsyncSession, Depends(get_db)],
-    status_filter: Optional[str] = Query(None, alias="status"),
 ):
-    """List active exams (public) or all exams with status filter."""
+    """List active published exams available to the public."""
     service = ExamService(db)
-    if status_filter:
-        return await service.get_exams(status_filter=status_filter)
     return await service.get_active_exams()
 
 
@@ -40,12 +37,13 @@ async def get_exam(
     exam_slug: str,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Get exam details by slug."""
+    """Get active published exam details by slug."""
     service = ExamService(db)
-    exam = await service.get_exam_by_slug(exam_slug)
+    exam = await service.get_active_exam_by_slug(exam_slug)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
     return exam
+
 
 
 @router.get("/exams/{exam_id}/subjects", response_model=list[SubjectResponse])
@@ -80,6 +78,17 @@ async def list_syllabus_versions(
 
 # --- Admin Exam Routes ---
 
+@router.get("/admin/exams", response_model=list[ExamResponse])
+async def list_admin_exams(
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status_filter: Optional[str] = Query(None, alias="status"),
+):
+    """List all exams including drafts and archived exams (admin/content manager only)."""
+    service = ExamService(db)
+    return await service.get_exams(status_filter=status_filter)
+
+
 @router.post("/admin/exams", response_model=ExamResponse, status_code=status.HTTP_201_CREATED)
 async def create_exam(
     data: ExamCreateRequest,
@@ -89,6 +98,7 @@ async def create_exam(
     """Create a new examination (admin only)."""
     service = ExamService(db)
     return await service.create_exam(data, created_by=current_user.id)
+
 
 
 @router.patch("/admin/exams/{exam_id}", response_model=ExamResponse)

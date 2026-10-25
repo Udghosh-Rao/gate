@@ -239,10 +239,15 @@ export function CBTExamInterface({
 
   const handleSubmitFinal = async () => {
     setIsSubmitting(true);
-    const result = await submitAttempt(attemptId, answers, questions);
-    setIsSubmitting(false);
-    setShowSubmitModal(false);
-    onFinishTest(result);
+    try {
+      const result = await submitAttempt(attemptId);
+      setShowSubmitModal(false);
+      onFinishTest(result);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Failed to submit attempt. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

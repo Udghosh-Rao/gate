@@ -2,7 +2,7 @@
 
 from typing import List
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     UPLOAD_DIR: str = "./uploads"
 
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    AUTH_RATE_LIMIT_PER_MINUTE: int = 15
+
     # Admin Bootstrap (dev only)
     BOOTSTRAP_ADMIN_EMAIL: str = "admin@examplatform.dev"
     BOOTSTRAP_ADMIN_PASSWORD: str = "Admin@Dev123"
@@ -51,7 +55,33 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        return self.APP_ENV == "production"
+        return self.APP_ENV.lower() == "production"
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        """Enforce strict security in production environments."""
+        if self.is_production:
+            insecure_secrets = [
+                "CHANGE_THIS_TO_A_RANDOM_SECRET_IN_PRODUCTION",
+                "secret",
+                "changeme",
+                "admin",
+                "password",
+                "devpassword123",
+            ]
+            if not self.JWT_SECRET_KEY or self.JWT_SECRET_KEY in insecure_secrets or len(self.JWT_SECRET_KEY) < 32:
+                raise ValueError(
+                    "Production security violation: JWT_SECRET_KEY must be a strong, cryptographically random secret of at least 32 characters in production."
+                )
+            if self.DEBUG:
+                raise ValueError("Production security violation: DEBUG mode must be disabled in production.")
+            if "sqlite" in self.DATABASE_URL.lower():
+                raise ValueError("Production security violation: SQLite is not supported for production. Use PostgreSQL.")
+            if self.BOOTSTRAP_ADMIN_PASSWORD == "Admin@Dev123":
+                raise ValueError(
+                    "Production security violation: Default bootstrap password must not be used in production."
+                )
+        return self
 
     model_config = {
         "env_file": ".env",
@@ -61,3 +91,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

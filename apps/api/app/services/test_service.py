@@ -119,8 +119,33 @@ class TestService:
     async def get_published_tests(self, exam_id: UUID) -> List[TestResponse]:
         return await self.get_tests(exam_id, status_filter="PUBLISHED")
 
+    async def get_published_test_series(self, exam_id: UUID) -> List[TestSeriesResponse]:
+        """Return only PUBLISHED test series (public-facing)."""
+        result = await self.db.execute(
+            select(TestSeries)
+            .where(
+                TestSeries.exam_id == exam_id,
+                TestSeries.status == TestSeriesStatus.PUBLISHED,
+            )
+            .order_by(TestSeries.display_order, TestSeries.name)
+        )
+        return [TestSeriesResponse.model_validate(ts) for ts in result.scalars().all()]
+
     async def get_tests_by_series(self, series_id: UUID) -> List[TestResponse]:
         query = select(Test).where(Test.test_series_id == series_id).order_by(Test.display_order, Test.title)
+        result = await self.db.execute(query)
+        return [TestResponse.model_validate(t) for t in result.scalars().all()]
+
+    async def get_published_tests_by_series(self, series_id: UUID) -> List[TestResponse]:
+        """Return only PUBLISHED tests for a series (public-facing)."""
+        query = (
+            select(Test)
+            .where(
+                Test.test_series_id == series_id,
+                Test.status == TestStatus.PUBLISHED,
+            )
+            .order_by(Test.display_order, Test.title)
+        )
         result = await self.db.execute(query)
         return [TestResponse.model_validate(t) for t in result.scalars().all()]
 
@@ -395,6 +420,13 @@ class AttemptService:
         result = await self.db.execute(query)
         return result.scalars().all()
 
+    async def get_attempt_by_id(self, attempt_id: UUID) -> Attempt | None:
+        """Load an attempt by ID — used for ownership verification."""
+        result = await self.db.execute(
+            select(Attempt).where(Attempt.id == attempt_id)
+        )
+        return result.scalar_one_or_none()
+
 
 class ScoringService:
     """Deterministic scoring engine — independent of the frontend.
@@ -417,12 +449,13 @@ class ScoringService:
         if attempt.status not in (AttemptStatus.SUBMITTED, AttemptStatus.EXPIRED):
             raise ValueError("Attempt must be submitted before evaluation")
 
-        # Check for existing result (idempotent)
+        # Check for existing result — idempotent: return existing without re-scoring
         existing_result = await self.db.execute(
             select(Result).where(Result.attempt_id == attempt_id)
         )
-        if existing_result.scalar_one_or_none():
-            raise ValueError("Attempt already evaluated")
+        existing = existing_result.scalar_one_or_none()
+        if existing:
+            return ResultResponse.model_validate(existing)
 
         # Load test questions
         tq_result = await self.db.execute(
@@ -542,14 +575,23 @@ class ScoringService:
         self, question: Question, answer: AttemptAnswer,
         pos_marks: float, neg_marks: float,
     ) -> tuple[bool, float]:
-        """MCQ: exactly one correct option. Negative marking applies."""
+        """MCQ: exactly one correct option must be selected. Negative marking applies.
+
+        Guard against gaming: if a student selects multiple options (which the
+        frontend should prevent but the API must also reject), treat as wrong.
+        """
         if not answer.selected_option_ids:
             return False, 0.0
         correct_ids = {str(opt.id) for opt in question.options if opt.is_correct}
+        if not correct_ids:
+            # Question has no correct option configured — score 0, flag as anomaly
+            return False, 0.0
         selected = set(answer.selected_option_ids)
         if selected == correct_ids:
             return True, pos_marks
-        return False, -neg_marks
+        # Wrong answer: deduct negative marks (neg_marks is stored as a positive value)
+        penalty = abs(neg_marks)
+        return False, -penalty
 
     def _evaluate_msq(
         self, question: Question, answer: AttemptAnswer,
@@ -569,16 +611,22 @@ class ScoringService:
         self, question: Question, answer: AttemptAnswer,
         pos_marks: float, neg_marks: float,
     ) -> tuple[bool, float]:
-        """NAT: compare numerical answer within configured tolerance."""
+        """NAT: compare numerical answer within configured tolerance.
+
+        GATE DA NAT questions have no negative marking.
+        Tolerance comparison uses absolute difference.
+        """
         if answer.numerical_answer is None:
             return False, 0.0
         if question.correct_numerical_answer is None:
+            # Question has no correct answer configured
             return False, 0.0
-        tolerance = question.numerical_tolerance or 0.01
+        # Use 0.0 tolerance for strict equality when not configured
+        tolerance = question.numerical_tolerance if question.numerical_tolerance is not None else 0.0
         diff = abs(answer.numerical_answer - question.correct_numerical_answer)
         if diff <= tolerance:
             return True, pos_marks
-        # No negative marking for NAT by default
+        # No negative marking for NAT
         return False, 0.0
 
     def _get_correct_answer_text(self, question: Question) -> str:
@@ -603,3 +651,17 @@ class ScoringService:
             select(Result).where(Result.attempt_id == attempt_id)
         )
         return result.scalar_one_or_none()
+
+    async def evaluate_attempt_idempotent(self, attempt_id: UUID) -> ResultResponse | None:
+        """Evaluate an attempt and return the result. If already evaluated, return existing.
+
+        This is safe to call multiple times — it will never re-score an attempt.
+        """
+        existing = await self.get_result(attempt_id)
+        if existing:
+            return ResultResponse.model_validate(existing)
+        try:
+            return await self.evaluate_attempt(attempt_id)
+        except ValueError:
+            # Attempt may not be in a scoreable state yet; caller should handle
+            return None
