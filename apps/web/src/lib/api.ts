@@ -9,6 +9,7 @@ import {
   Test,
   AttemptQuestion,
   AttemptAnswer,
+  AttemptStartResponse,
   Result,
   AdminDashboardMetrics,
   StudentAttemptSummary,
@@ -223,7 +224,7 @@ export async function fetchTestById(testId: string): Promise<Test | undefined> {
 export async function startAttempt(
   testId: string,
   token?: string
-): Promise<{ id: string; questions: AttemptQuestion[]; expires_at: string }> {
+): Promise<AttemptStartResponse> {
   const authToken = token || getAuthToken();
   if (!authToken) {
     throw new Error("You must be logged in to start a test.");
@@ -256,11 +257,7 @@ export async function startAttempt(
     throw new Error("Invalid response from server. Please try again.");
   }
 
-  return {
-    id: data.id,
-    questions: data.questions,
-    expires_at: data.expires_at,
-  };
+  return data as AttemptStartResponse;
 }
 
 export async function saveAttemptAnswer(
@@ -354,15 +351,12 @@ export async function apiCreateExam(examData: Partial<Exam>, token?: string): Pr
 }
 
 export async function apiFetchAdminMetrics(token?: string): Promise<AdminDashboardMetrics | null> {
-  try {
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/admin/dashboard`, { headers });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
+  const authToken = token || getAuthToken();
+  const headers: Record<string, string> = {};
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  const res = await fetch(`${API_BASE}/admin/dashboard`, { headers });
+  if (!res.ok) throw new Error(`Unable to load admin metrics (${res.status})`);
+  return await res.json();
 }
 
 // Resource / Study Material Management

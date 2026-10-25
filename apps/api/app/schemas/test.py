@@ -179,13 +179,26 @@ class TestResponse(BaseModel):
 
 # --- Attempt ---
 
+class AttemptSavedAnswer(BaseModel):
+    question_id: UUID
+    selected_option_ids: Optional[List[UUID]] = None
+    numerical_answer: Optional[float] = None
+    is_marked_for_review: bool = False
+    is_visited: bool = True
+    time_spent_seconds: int = 0
+
+    model_config = {"from_attributes": True}
+
+
 class AttemptCreateResponse(BaseModel):
     id: UUID
     test_id: UUID
     status: str
     started_at: datetime
     expires_at: datetime
+    remaining_seconds: int
     questions: List[QuestionStudentView] = []
+    saved_answers: List[AttemptSavedAnswer] = []
 
     model_config = {"from_attributes": True}
 

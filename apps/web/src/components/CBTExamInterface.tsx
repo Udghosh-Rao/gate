@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { AttemptQuestion, AttemptAnswer, Result, Test, User } from "../lib/types";
 import { saveAttemptAnswer, submitAttempt } from "../lib/api";
 import { ScientificCalculator } from "./ScientificCalculator";
@@ -23,6 +23,8 @@ interface CBTExamInterfaceProps {
   test: Test;
   attemptId: string;
   questions: AttemptQuestion[];
+  savedAnswers: AttemptAnswer[];
+  remainingSeconds: number;
   currentUser: User | null;
   onFinishTest: (result: Result) => void;
   onExitTest: () => void;
@@ -32,32 +34,42 @@ export function CBTExamInterface({
   test,
   attemptId,
   questions,
+  savedAnswers,
+  remainingSeconds,
   currentUser,
   onFinishTest,
   onExitTest,
 }: CBTExamInterfaceProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>(() => Object.fromEntries(questions.map((q, idx) => [q.id, {
-    question_id: q.id,
-    selected_option_ids: [],
-    numerical_answer: undefined,
-    is_marked_for_review: false,
-    is_visited: idx === 0,
-    time_spent_seconds: 0,
-  }])));
-  const [timeLeft, setTimeLeft] = useState<number>(test.duration_seconds || 10800);
+  const [answers, setAnswers] = useState<Record<string, AttemptAnswer>>(() => {
+    const initial = Object.fromEntries(questions.map((q, idx) => [q.id, {
+      question_id: q.id,
+      selected_option_ids: [],
+      numerical_answer: undefined,
+      is_marked_for_review: false,
+      is_visited: idx === 0,
+      time_spent_seconds: 0,
+    }])) as Record<string, AttemptAnswer>;
+    for (const answer of savedAnswers) initial[answer.question_id] = { ...initial[answer.question_id], ...answer };
+    return initial;
+  });
+  const [timeLeft, setTimeLeft] = useState<number>(remainingSeconds);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [syncErrorMsg, setSyncErrorMsg] = useState<string | null>(null);
   const submitHandler = useRef<(() => Promise<void>) | null>(null);
+  const pendingSaves = useRef<Map<string, Promise<void>>>(new Map());
 
   const persistAnswer = async (qId: string, updated: AttemptAnswer) => {
     setSyncStatus("saving");
     setSyncErrorMsg(null);
     try {
-      await saveAttemptAnswer(attemptId, qId, updated);
+      const prior = pendingSaves.current.get(qId) || Promise.resolve();
+      const next = prior.catch(() => undefined).then(async () => { await saveAttemptAnswer(attemptId, qId, updated); });
+      pendingSaves.current.set(qId, next);
+      await next;
       setSyncStatus("saved");
     } catch (err: unknown) {
       setSyncStatus("error");
@@ -243,9 +255,14 @@ export function CBTExamInterface({
     else if (state === "answered-review") summaryCounts.answered_review++;
   });
 
-  const handleSubmitFinal = async () => {
+  const handleSubmitFinal = useCallback(async () => {
     setIsSubmitting(true);
     try {
+      const saves = [...pendingSaves.current.values()];
+      const saveResults = await Promise.allSettled(saves);
+      if (saveResults.some((item) => item.status === "rejected")) {
+        throw new Error("Some answers could not be saved. Retry the save before submitting.");
+      }
       const result = await submitAttempt(attemptId);
       setShowSubmitModal(false);
       onFinishTest(result);
@@ -254,7 +271,7 @@ export function CBTExamInterface({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [attemptId, onFinishTest]);
 
   useEffect(() => {
     submitHandler.current = handleSubmitFinal;
@@ -314,7 +331,7 @@ export function CBTExamInterface({
               {currentUser?.full_name || "Candidate (Guest)"}
             </div>
             <div className="text-[10px] text-slate-400">
-              {currentUser ? `ID: ${currentUser.id.slice(0, 8).toUpperCase()}` : "Roll: 26DA894218"}
+              {currentUser ? `ID: ${currentUser.id.slice(0, 8).toUpperCase()}` : "Candidate"}
             </div>
           </div>
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white border border-slate-700">
@@ -389,7 +406,7 @@ export function CBTExamInterface({
               <div className="space-y-3 max-w-2xl">
                 <div className="text-xs text-amber-400/90 font-medium flex items-center gap-1.5 mb-2">
                   <AlertCircle className="w-3.5 h-3.5" />
-                  Multiple Select Question: Select all correct options. No negative marking.
+                  Multiple Select Question: Select all options that apply.
                 </div>
                 {currentQ.options.map((opt) => {
                   const isSelected = currentAns.selected_option_ids?.includes(opt.id);

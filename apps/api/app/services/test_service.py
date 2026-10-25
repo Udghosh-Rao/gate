@@ -262,7 +262,9 @@ class AttemptService:
                     status=existing_attempt.status.value,
                     started_at=existing_attempt.started_at,
                     expires_at=existing_attempt.expires_at,
+                    remaining_seconds=max(0, int((ensure_utc(existing_attempt.expires_at) - now).total_seconds())),
                     questions=questions,
+                    saved_answers=existing_attempt.answers,
                 )
 
         # Check max attempts
@@ -318,7 +320,9 @@ class AttemptService:
             status=attempt.status.value,
             started_at=attempt.started_at,
             expires_at=attempt.expires_at,
+            remaining_seconds=test.duration_seconds,
             questions=questions,
+            saved_answers=[],
         )
 
     async def _load_test_questions_for_student(

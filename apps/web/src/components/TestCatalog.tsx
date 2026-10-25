@@ -153,7 +153,7 @@ export function TestCatalog({ exam, onSelectTest }: TestCatalogProps) {
             </p>
 
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700 space-y-2.5 leading-relaxed max-h-64 overflow-y-auto">
-              <div className="font-semibold text-slate-900">Official Testing Rules:</div>
+              <div className="font-semibold text-slate-900">Test instructions:</div>
               <ul className="list-disc pl-4 space-y-1.5 text-slate-600">
                 <li>
                   Total duration is {Math.round(selectedInstructionTest.duration_seconds / 60)} minutes. The server countdown timer will automatically submit your attempt upon completion.

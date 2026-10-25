@@ -170,6 +170,19 @@ async def list_tests(
     return await service.get_published_tests(exam_id)
 
 
+@router.get("/tests/{test_id}", response_model=TestResponse)
+async def get_published_test(
+    test_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return metadata only for a published test."""
+    test = await db.execute(select(Test).where(Test.id == test_id, Test.status == "PUBLISHED"))
+    record = test.scalar_one_or_none()
+    if record is None:
+        raise HTTPException(status_code=404, detail="Test not found")
+    return record
+
+
 @router.get("/admin/exams/{exam_id}/tests", response_model=list[TestResponse])
 async def list_admin_tests(
     exam_id: UUID,

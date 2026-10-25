@@ -126,6 +126,17 @@ async def test_cbt_exam_lifecycle():
         )
         assert ans1_res.status_code == 200
 
+        # Reopening an in-progress test resumes the same server-timed attempt and answers.
+        resumed = await client.post(f"/api/v1/tests/{test_id}/attempts", headers=headers)
+        assert resumed.status_code == 200
+        resumed_data = resumed.json()
+        assert resumed_data["id"] == attempt_id
+        assert 0 <= resumed_data["remaining_seconds"] <= attempt_data["remaining_seconds"]
+        assert any(
+            answer["question_id"] == q1["id"] and answer["selected_option_ids"] == [opt_b]
+            for answer in resumed_data["saved_answers"]
+        )
+
         # 6. Answer question 3 (NAT: F1-score 0.67)
         q_nat = next(q for q in questions if q["question_type"] == "NAT")
         ans_nat_res = await client.put(

@@ -54,7 +54,7 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             <span>{exam.code} Curriculum &amp; Study Notes</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Official Academic Syllabus Explorer
+            Published syllabus and resources
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
             Browse the syllabus topics and study materials published for this examination.

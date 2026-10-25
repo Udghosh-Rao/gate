@@ -57,7 +57,7 @@ export function StudentDashboard({
             Sign In to Access Your Candidate Dashboard
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto mb-8 leading-relaxed">
-            Your personal attempt history, question evaluations, accuracy trends, and syllabus bookmarks are saved to your verified candidate account.
+            Review your saved attempt history, available evaluations, and released results.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button
@@ -204,7 +204,7 @@ export function StudentDashboard({
                 No Previous Test Attempts Recorded
               </div>
               <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed mt-1">
-                You haven&apos;t attempted any tests yet. Launch an official mock test to assess your readiness, timing, and view mathematical worked solutions.
+                You haven&apos;t attempted any tests yet. Choose a published practice test to get started.
               </p>
             </div>
             <button

@@ -11,15 +11,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: `${BRAND.name} — ${BRAND.tagline}`,
-  description:
-    "A dedicated competitive examination preparation platform for Indian students. Structured syllabi, verified study materials, topic-wise practice questions, and authentic computer-based mock examinations.",
-  keywords:
-    "competitive exam preparation, GATE DA, GATE CS, IIT JAM, study notes, mock tests, question bank, CBT simulator India",
-  authors: [{ name: BRAND.legalName }],
+  description: "Browse published exam syllabi, study resources, and computer-based practice tests.",
+  keywords: "GATE DA, GATE CS, competitive exam preparation, practice tests",
   openGraph: {
     title: `${BRAND.name} — ${BRAND.tagline}`,
-    description:
-      "Structured learning resources, chapter-wise notes, curated question banks, and realistic mock examination simulator.",
+    description: "Browse published exam syllabi, study resources, and practice tests.",
     type: "website",
     locale: "en_IN",
     siteName: BRAND.name,
@@ -27,8 +23,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: `${BRAND.name} — ${BRAND.tagline}`,
-    description:
-      "Structured competitive-exam preparation for GATE Data Science, CS, and technical examinations.",
+    description: "Browse published exam syllabi, study resources, and practice tests.",
   },
 };
 

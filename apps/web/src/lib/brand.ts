@@ -8,14 +8,5 @@
 
 export const BRAND = {
   name: "ExamPrep",
-  legalName: "ExamPrep Learning Technologies Pvt. Ltd.",
-  tagline: "Structured Preparation for Competitive Examinations",
-  missionStatement:
-    "Building India's most dependable, academically rigorous preparation platform for competitive examinations.",
-  initialExamFocus: "GATE Data Science & Artificial Intelligence (GATE DA)",
-  supportEmail: "support@examprep.in",
-  contactEmail: "hello@examprep.in",
-  facultyEmail: "academic@examprep.in",
-  careersEmail: "careers@examprep.in",
-  address: "Bangalore & New Delhi, India",
+  tagline: "Focused preparation for competitive exams",
 } as const;

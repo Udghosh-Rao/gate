@@ -72,25 +72,16 @@ export function AdminDashboard({
     total_questions: number;
     total_attempts: number;
     total_users: number;
-  }>({
-    total_exams: 0,
-    total_tests: 0,
-    total_attempts: 0,
-    total_questions: 0,
-    total_users: 0,
-  });
+  } | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
 
   useEffect(() => {
     apiFetchAdminMetrics().then((res) => {
-      if (res) {
-        setMetrics({
-          total_exams: res.total_exams,
-          total_tests: res.total_tests,
-          total_questions: res.total_questions,
-          total_attempts: res.total_attempts || 0,
-          total_users: res.total_users || 2,
-        });
-      }
+      setMetrics(res);
+      setMetricsError(null);
+    }).catch((error: unknown) => {
+      setMetrics(null);
+      setMetricsError(error instanceof Error ? error.message : "Unable to load dashboard metrics.");
     });
   }, [exams.length]);
 
@@ -469,25 +460,26 @@ export function AdminDashboard({
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs">
               <div className="text-xs text-slate-500 font-medium">Configured Exams</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics.total_exams}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Database verified</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics?.total_exams ?? "—"}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Database records</div>
             </div>
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs">
-              <div className="text-xs text-slate-500 font-medium">Active Mock Tests</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics.total_tests}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Ready for CBT attempts</div>
+              <div className="text-xs text-slate-500 font-medium">Published Tests</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics?.total_tests ?? "—"}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Available for attempts</div>
             </div>
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs">
               <div className="text-xs text-slate-500 font-medium">Question Bank Items</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics.total_questions}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Vetted MCQs, MSQs, NATs</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics?.total_questions ?? "—"}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Question bank records</div>
             </div>
             <div className="p-5 rounded-xl bg-white border border-slate-200 shadow-xs">
               <div className="text-xs text-slate-500 font-medium">Student Attempts</div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics.total_attempts}</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{metrics?.total_attempts ?? "—"}</div>
               <div className="text-[11px] text-slate-400 mt-0.5">Evaluated submissions</div>
             </div>
           </div>
+          {metricsError && <p role="alert" className="text-sm text-rose-700">{metricsError}</p>}
 
           {/* Quick Actions */}
           <div className="p-6 rounded-xl bg-white border border-slate-200 shadow-xs space-y-4">
@@ -686,7 +678,7 @@ export function AdminDashboard({
             <div className="text-center py-10 text-xs text-slate-500">Loading question bank...</div>
           ) : questions.length === 0 ? (
             <div className="p-8 rounded-xl bg-white border border-slate-200 text-center text-xs text-slate-500">
-              No questions found for this track. Use &quot;Create New Question&quot; to author verified exam questions.
+              No questions found for this exam. Use &quot;Create New Question&quot; to add content to the question bank.
             </div>
           ) : (
             <div className="space-y-3">
@@ -889,7 +881,7 @@ export function AdminDashboard({
           <div className="w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-xl p-6 relative">
             <h3 className="text-base font-bold text-slate-900 mb-1">Upload Study Material / Notes</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Publish authentic revision notes or formula guides for students.
+              Publish revision notes or formula guides for students.
             </p>
 
             <form onSubmit={handleCreateResource} className="space-y-3 text-xs">
@@ -956,7 +948,7 @@ export function AdminDashboard({
           <div className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-xl p-6 relative max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-bold text-slate-900 mb-1">Author Question</h3>
             <p className="text-xs text-slate-500 mb-3">
-              Create an academically vetted question with authentic evaluation parameters.
+              Create a question and configure its evaluation parameters.
             </p>
 
             {qError && (

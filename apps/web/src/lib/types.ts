@@ -154,6 +154,17 @@ export interface AttemptAnswer {
   time_spent_seconds: number;
 }
 
+export interface AttemptStartResponse {
+  id: string;
+  test_id: string;
+  status: string;
+  started_at: string;
+  expires_at: string;
+  remaining_seconds: number;
+  questions: AttemptQuestion[];
+  saved_answers: AttemptAnswer[];
+}
+
 export interface QuestionResultDetail {
   question_id: string;
   question_type: QuestionType;
