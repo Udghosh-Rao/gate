@@ -16,12 +16,12 @@ import {
 } from "./types";
 
 const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
-const API_BASE = CONFIGURED_API_BASE || (process.env.NODE_ENV === "development" ? "http://localhost:8000/api/v1" : "");
+// Browser requests use the shared Vercel project domain in production; the
+// top-level /api rewrite sends them to the FastAPI service. Keep an explicit
+// URL override for split local setups and retain localhost during development.
+const API_BASE = CONFIGURED_API_BASE || (process.env.NODE_ENV === "development" ? "http://localhost:8000/api/v1" : "/api/v1");
 
 function getApiBase(): string {
-  if (!API_BASE) {
-    throw new Error("NEXT_PUBLIC_API_URL is not configured for this deployment.");
-  }
   return API_BASE;
 }
 
