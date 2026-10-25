@@ -23,11 +23,29 @@ from uuid import UUID
 from app.models.test import Test as ExamTest, ExplanationReleasePolicy
 from app.core.database import AsyncSession
 from app.core.config import settings
+from app.core.config import Settings
 from app.services.billing_service import verify_webhook_signature
 
 from app.main import app
 
 BASE = "http://test"
+
+
+def test_vercel_runtime_detects_production_environment(monkeypatch):
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.delenv("APP_ENV", raising=False)
+    monkeypatch.delenv("DEBUG", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@db.example/app")
+    monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql+psycopg://user:pass@db.example/app")
+    monkeypatch.setenv("JWT_SECRET_KEY", "t" * 48)
+    monkeypatch.setenv("REDIS_URL", "rediss://redis.example:6380/0")
+    monkeypatch.setenv("CORS_ORIGINS", '["https://gate.example"]')
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "true")
+
+    runtime_settings = Settings(_env_file=None)
+    assert runtime_settings.APP_ENV == "production"
+    assert runtime_settings.DEBUG is False
+    assert runtime_settings.is_production
 
 
 def test_razorpay_webhook_signature_is_verified(monkeypatch):

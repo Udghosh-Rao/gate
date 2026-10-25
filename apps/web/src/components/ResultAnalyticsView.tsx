@@ -65,7 +65,7 @@ export function ResultAnalyticsView({
       </div>
 
       {/* ── Score summary ───────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
+      <div className="result-summary-grid">
 
         {/* Main score */}
         <div className="card-white" style={{ gridColumn: "span 2", position: "relative", overflow: "hidden" }}>

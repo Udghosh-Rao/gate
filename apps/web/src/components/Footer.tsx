@@ -10,33 +10,27 @@ interface FooterProps {
 
 export function Footer({ onNavigate }: FooterProps) {
   return (
-    <footer className="mt-16 border-t border-slate-200 bg-white">
-      <div className="mx-auto grid max-w-7xl gap-10 px-5 py-10 sm:px-8 md:grid-cols-[1.4fr_1fr_1fr]">
-        <div className="max-w-sm">
-          <div className="flex items-center gap-2 font-bold text-slate-900">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-700 text-white"><GraduationCap size={18} /></span>
-            {BRAND.name}
-          </div>
-          <p className="mt-3 text-sm leading-6 text-slate-600">A focused place to explore published exam content and practise with timed tests.</p>
-          <p className="mt-3 text-xs leading-5 text-slate-500">Independent preparation resource. No official examination-board affiliation is claimed.</p>
+    <footer className="site-footer">
+      <div className="footer-content">
+        <div className="footer-brand-block">
+          <div className="footer-brand"><span className="footer-mark"><GraduationCap size={18} /></span><strong>{BRAND.name}</strong></div>
+          <p>Structured preparation for competitive exams, from syllabus exploration to timed practice and released results.</p>
+          <small>Independent preparation resource. No examination-board affiliation is claimed.</small>
         </div>
-        <div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Explore</h2>
-          <div className="mt-3 flex flex-col items-start gap-2 text-sm">
-            <button onClick={() => onNavigate("home")} className="text-slate-700 hover:text-blue-700">Examinations</button>
-            <button onClick={() => onNavigate("syllabus")} className="text-slate-700 hover:text-blue-700">Syllabus and resources</button>
-            <button onClick={() => onNavigate("tests")} className="text-slate-700 hover:text-blue-700">Practice tests</button>
-          </div>
+        <div className="footer-links-group">
+          <h2>Explore</h2>
+          <button onClick={() => onNavigate("home")}>Examinations</button>
+          <button onClick={() => onNavigate("syllabus")}>Syllabus &amp; notes</button>
+          <button onClick={() => onNavigate("tests")}>Mock tests</button>
+          <button onClick={() => onNavigate("pricing")}>Pricing</button>
         </div>
-        <div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Your account</h2>
-          <div className="mt-3 flex flex-col items-start gap-2 text-sm">
-            <button onClick={() => onNavigate("dashboard")} className="text-slate-700 hover:text-blue-700">Student dashboard</button>
-            <button onClick={() => onNavigate("about")} className="text-slate-700 hover:text-blue-700">About this platform</button>
-          </div>
+        <div className="footer-links-group">
+          <h2>Your account</h2>
+          <button onClick={() => onNavigate("dashboard")}>Student dashboard</button>
+          <button onClick={() => onNavigate("about")}>About ExamPrep</button>
         </div>
       </div>
-      <div className="border-t border-slate-100 px-5 py-4 text-center text-xs text-slate-500">© {BRAND.name}</div>
+      <div className="footer-bottom"><span>© {BRAND.name}</span><span>GATE DA is the initial examination focus.</span></div>
     </footer>
   );
 }

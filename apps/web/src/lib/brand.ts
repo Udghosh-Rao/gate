@@ -8,5 +8,5 @@
 
 export const BRAND = {
   name: "ExamPrep",
-  tagline: "Focused preparation for competitive exams",
+  tagline: "Competitive Exam Preparation",
 } as const;

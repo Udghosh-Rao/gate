@@ -1,8 +1,9 @@
 """Application configuration loaded from environment variables."""
 
+import os
 from typing import List
 from pydantic_settings import BaseSettings
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 
 class Settings(BaseSettings):
@@ -10,8 +11,10 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "ExamPlatform"
-    APP_ENV: str = "development"
-    DEBUG: bool = True
+    # Vercel sets VERCEL_ENV automatically. Do not let a serverless production
+    # deployment silently fall back to local-development table creation.
+    APP_ENV: str = Field(default_factory=lambda: os.getenv("VERCEL_ENV", "development"))
+    DEBUG: bool = Field(default_factory=lambda: os.getenv("VERCEL_ENV", "development").lower() != "production")
     API_V1_PREFIX: str = "/api/v1"
 
     # Database

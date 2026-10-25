@@ -58,6 +58,7 @@ export interface Resource {
   file_size_bytes?: number | null;
   mime_type?: string | null;
   is_published: boolean;
+  is_paid?: boolean;
 }
 
 export type QuestionType = "MCQ" | "MSQ" | "NAT";

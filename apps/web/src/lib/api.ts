@@ -589,17 +589,18 @@ export async function apiPublishTest(testId: string, token?: string): Promise<Te
 
 // Student Attempt History
 export async function fetchStudentAttemptsList(token?: string): Promise<StudentAttemptSummary[]> {
-  try {
-    const authToken = token || getAuthToken();
-    if (!authToken) return [];
-    const res = await fetch(`${getApiBase()}/student/attempts`, {
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-    if (!res.ok) return [];
-    return await res.json();
-  } catch {
-    return [];
+  const authToken = token || getAuthToken();
+  if (!authToken) throw new Error("Sign in to view your test history.");
+  const res = await fetch(`${getApiBase()}/student/attempts`, {
+    headers: { Authorization: `Bearer ${authToken}` },
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.detail || `Unable to load your test history (${res.status})`);
   }
+  const data: unknown = await res.json();
+  if (!Array.isArray(data)) throw new Error("Invalid test history response");
+  return data as StudentAttemptSummary[];
 }
 
 export interface BillingPlan {

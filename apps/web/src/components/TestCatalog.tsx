@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Exam, Test } from "../lib/types";
 import { fetchTests } from "../lib/api";
 import {
@@ -27,43 +27,56 @@ export function TestCatalog({ exam, onSelectTest }: TestCatalogProps) {
   const [selectedInstructionTest, setSelectedInstructionTest] = useState<Test | null>(null);
   const [tests, setTests] = useState<Test[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const loadTests = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      setTests(await fetchTests(exam.id));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Unable to load tests");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [exam.id]);
 
   useEffect(() => {
-    if (exam?.id) {
-      fetchTests(exam.id).then(setTests).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Unable to load tests"));
-    }
-  }, [exam?.id]);
+    if (!exam?.id) return;
+    void Promise.resolve().then(loadTests);
+  }, [exam?.id, loadTests]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header Banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
+      <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="relative z-10 max-w-3xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+          <div className="inline-flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800">
             <Sparkles className="w-3.5 h-3.5" />
             <span>{exam.code} test catalog</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Timed Computer-Based Mock Examinations
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Mock tests for {exam.name}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
+          <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
             Published practice tests configured for this examination.
           </p>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-3">
-        <div className="text-xs text-slate-500 font-medium">
+        {!isLoading && !loadError && <div className="text-xs text-slate-500 font-medium">
           Showing {tests.length} available papers
-        </div>
+        </div>}
       </div>
 
-      {loadError && <div role="alert" className="p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-800">{loadError} <button onClick={() => fetchTests(exam.id).then(setTests).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : "Unable to load tests"))} className="underline ml-2">Retry</button></div>}
-      {!loadError && tests.length === 0 && <div className="p-6 text-center rounded-xl bg-white border border-slate-200 text-slate-600">No published tests are available for this examination yet.</div>}
+      {isLoading && <div className="rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">Loading published tests…</div>}
+      {loadError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError} <button onClick={() => void loadTests()} className="ml-2 underline">Retry</button></div>}
+      {!isLoading && !loadError && tests.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">No published tests are available for this examination yet.</div>}
 
       {/* Tests Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {tests.map((t) => (
+        {!isLoading && !loadError && tests.map((t) => (
           <div
             key={t.id}
             className="startup-card p-6 bg-white border border-slate-200 shadow-xs flex flex-col justify-between hover:border-blue-400"

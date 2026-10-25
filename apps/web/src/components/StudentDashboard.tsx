@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { User, Result, StudentAttemptSummary } from "../lib/types";
+import { User, Exam, StudentAttemptSummary } from "../lib/types";
 import { fetchStudentAttemptsList } from "../lib/api";
 import {
   Clock,
@@ -22,27 +22,37 @@ import {
 
 interface StudentDashboardProps {
   currentUser: User | null;
+  selectedExam: Exam | null;
   onNavigate: (tab: string) => void;
-  onLaunchMockTest: () => void;
   onOpenAuth?: (mode?: "login" | "register") => void;
 }
 
 export function StudentDashboard({
   currentUser,
+  selectedExam,
   onNavigate,
-  onLaunchMockTest,
   onOpenAuth,
 }: StudentDashboardProps) {
   const [attempts, setAttempts] = useState<StudentAttemptSummary[]>([]);
-  const [isLoadingAttempts, setIsLoadingAttempts] = useState(false);
+  const [isLoadingAttempts, setIsLoadingAttempts] = useState(true);
+  const [attemptsError, setAttemptsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (currentUser) {
-      fetchStudentAttemptsList()
-        .then((data) => setAttempts(data || []))
-        .catch(() => setAttempts([]))
-        .finally(() => setIsLoadingAttempts(false));
-    }
+    if (!currentUser) return;
+    let ignore = false;
+    void Promise.resolve().then(async () => {
+      setIsLoadingAttempts(true);
+      setAttemptsError(null);
+      try {
+        const data = await fetchStudentAttemptsList();
+        if (!ignore) setAttempts(data);
+      } catch (error) {
+        if (!ignore) setAttemptsError(error instanceof Error ? error.message : "Unable to load your test history.");
+      } finally {
+        if (!ignore) setIsLoadingAttempts(false);
+      }
+    });
+    return () => { ignore = true; };
   }, [currentUser]);
 
   // Unauthenticated Gate
@@ -94,31 +104,27 @@ export function StudentDashboard({
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-6 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="badge-pill-pulse text-[11px] py-0.5 px-2.5">
-              Candidate Portal
-            </span>
-            <span className="text-slate-300">•</span>
-            <span className="text-[11px] font-semibold text-emerald-700">Active Aspirant</span>
+            <span className="badge-pill-pulse text-[11px] py-0.5 px-2.5">Student dashboard</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
             {currentUser.full_name}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Verified Account: {currentUser.email} • Role: {currentUser.role}
+            {currentUser.email}
           </p>
         </div>
 
         <button
-          onClick={onLaunchMockTest}
-          className="btn-primary-gradient px-5 py-2.5 rounded-xl text-xs font-semibold shadow-md flex items-center gap-2 cursor-pointer"
+          onClick={() => onNavigate("tests")}
+          className="btn-primary-gradient px-5 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer"
         >
-          <PlayCircle className="w-4 h-4 text-blue-100" />
-          <span>Launch CBT Exam</span>
+          <PlayCircle className="w-4 h-4" />
+          <span>Browse mock tests</span>
         </button>
       </div>
 
-      {/* Genuine Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+      {/* Persisted summary data is shown only after the history request succeeds. */}
+      {!isLoadingAttempts && !attemptsError && <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <div className="startup-card p-6 bg-white border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
@@ -168,14 +174,14 @@ export function StudentDashboard({
           </div>
           <div>
             <div className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              GATE DA
+              {selectedExam?.code || "No exam selected"}
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              Data Science &amp; Artificial Intelligence
+              {selectedExam?.name || "Choose an examination from the catalogue"}
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Historical Attempts Table */}
       <div className="space-y-4">
@@ -194,6 +200,12 @@ export function StudentDashboard({
           <div className="text-center py-10 text-xs text-slate-500">
             Loading your examination history...
           </div>
+        ) : attemptsError ? (
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+            <p className="font-semibold">Your test history could not be loaded.</p>
+            <p className="mt-1 text-xs">{attemptsError}</p>
+            <button onClick={() => { setAttemptsError(null); setIsLoadingAttempts(true); void fetchStudentAttemptsList().then(setAttempts).catch((error: unknown) => setAttemptsError(error instanceof Error ? error.message : "Unable to load your test history.")).finally(() => setIsLoadingAttempts(false)); }} className="mt-3 text-xs font-semibold underline">Retry</button>
+          </div>
         ) : attempts.length === 0 ? (
           <div className="startup-card p-10 bg-white border border-slate-200 text-center space-y-4 shadow-xs">
             <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
@@ -208,11 +220,11 @@ export function StudentDashboard({
               </p>
             </div>
             <button
-              onClick={onLaunchMockTest}
+              onClick={() => onNavigate("tests")}
               className="px-6 py-2.5 rounded-xl btn-primary-gradient text-xs font-semibold cursor-pointer shadow-xs inline-flex items-center gap-2"
             >
               <PlayCircle className="w-4 h-4 text-blue-100" />
-              <span>Take Free Mock Test</span>
+              <span>Explore available mock tests</span>
             </button>
           </div>
         ) : (

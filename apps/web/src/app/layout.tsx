@@ -11,11 +11,11 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: `${BRAND.name} — ${BRAND.tagline}`,
-  description: "Browse published exam syllabi, study resources, and computer-based practice tests.",
+  description: "Structured preparation for competitive exams, from syllabus exploration to practice and mock tests. Starting with GATE Data Science and Artificial Intelligence.",
   keywords: "GATE DA, GATE CS, competitive exam preparation, practice tests",
   openGraph: {
     title: `${BRAND.name} — ${BRAND.tagline}`,
-    description: "Browse published exam syllabi, study resources, and practice tests.",
+    description: "Explore published exam syllabi, available study material, timed practice tests, and released results.",
     type: "website",
     locale: "en_IN",
     siteName: BRAND.name,

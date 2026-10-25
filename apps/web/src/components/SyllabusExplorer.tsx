@@ -24,37 +24,69 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
   const [resources, setResources] = useState<Resource[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [subjectError, setSubjectError] = useState<string | null>(null);
+  const [resourceError, setResourceError] = useState<string | null>(null);
+  const [topicError, setTopicError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [topicReload, setTopicReload] = useState(0);
 
   useEffect(() => {
-    if (exam?.id) {
-      fetchSubjects(exam.id).then((loaded) => {
-        setSubjects(loaded);
-        setSelectedSubjectId((current) => loaded.some((item) => item.id === current) ? current : (loaded[0]?.id || ""));
-      });
-      fetchPublishedResources(exam.id).then(setResources).catch(() => setResources([]));
-    }
-  }, [exam?.id]);
+    let ignore = false;
+    void Promise.resolve().then(async () => {
+      const [subjectResult, resourceResult] = await Promise.allSettled([
+        fetchSubjects(exam.id), fetchPublishedResources(exam.id),
+      ]);
+      if (ignore) return;
+      if (subjectResult.status === "fulfilled") {
+        setSubjects(subjectResult.value);
+        setSelectedSubjectId((current) => subjectResult.value.some((item) => item.id === current) ? current : (subjectResult.value[0]?.id || ""));
+        setSubjectError(null);
+      } else {
+        setSubjectError(subjectResult.reason instanceof Error ? subjectResult.reason.message : "Unable to load syllabus subjects.");
+      }
+      if (resourceResult.status === "fulfilled") {
+        setResources(resourceResult.value);
+        setResourceError(null);
+      } else {
+        setResourceError(resourceResult.reason instanceof Error ? resourceResult.reason.message : "Unable to load study materials.");
+      }
+    });
+    return () => { ignore = true; };
+  }, [exam.id, reload]);
 
   const activeSubject = subjects.find((subject) => subject.id === selectedSubjectId) || null;
 
   useEffect(() => {
-    fetchTopics(selectedSubjectId).then(setTopics).catch(() => setTopics([]));
-  }, [selectedSubjectId]);
-  const currentTopics = topics.filter((topic) => topic.is_active);
+    if (!selectedSubjectId) return;
+    let ignore = false;
+    void Promise.resolve().then(async () => {
+      try {
+        const loaded = await fetchTopics(selectedSubjectId);
+        if (!ignore) {
+          setTopics(loaded);
+          setTopicError(null);
+        }
+      } catch (error) {
+        if (!ignore) setTopicError(error instanceof Error ? error.message : "Unable to load syllabus topics.");
+      }
+    });
+    return () => { ignore = true; };
+  }, [selectedSubjectId, topicReload]);
+  const currentTopics = selectedSubjectId ? topics.filter((topic) => topic.is_active) : [];
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
       {/* Header Banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 sm:p-8 text-white shadow-lg relative overflow-hidden">
+      <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         <div className="relative z-10 max-w-3xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+          <div className="inline-flex items-center gap-2 rounded-md border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800">
             <Sparkles className="w-3.5 h-3.5" />
             <span>{exam.code} Curriculum &amp; Study Notes</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Published syllabus and resources
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Syllabus &amp; study materials
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
+          <p className="max-w-2xl text-sm leading-relaxed text-slate-600">
             Browse the syllabus topics and study materials published for this examination.
           </p>
         </div>
@@ -68,6 +100,8 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             <span className="text-[11px] text-blue-600 font-semibold">Published subjects</span>
           </div>
 
+          {subjectError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">{subjectError}<button onClick={() => setReload((value) => value + 1)} className="ml-2 font-semibold underline">Retry</button></div>}
+          {!subjectError && subjects.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-xs leading-5 text-slate-600">No subjects have been published for this examination yet.</div>}
           <div className="space-y-2">
             {subjects.map((subj, idx) => {
               const isSelected = subj.id === selectedSubjectId;
@@ -132,6 +166,8 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">
+              {topicError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">{topicError}<button onClick={() => setTopicReload((value) => value + 1)} className="ml-2 font-semibold underline">Retry</button></div>}
+              {!topicError && currentTopics.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-xs leading-5 text-slate-600">No topics are published under this subject yet.</div>}
               {currentTopics.map((topic, i) => (
                 <div
                   key={i}
@@ -155,6 +191,8 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {resourceError && <div role="alert" className="sm:col-span-2 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">{resourceError}<button onClick={() => setReload((value) => value + 1)} className="ml-2 font-semibold underline">Retry</button></div>}
+              {!resourceError && resources.length === 0 && <div className="sm:col-span-2 rounded-xl border border-dashed border-slate-300 bg-white p-5 text-xs leading-5 text-slate-600">No study materials have been published for this examination yet.</div>}
               {resources.map((res) => (
                 <div
                   key={res.id}
@@ -173,11 +211,12 @@ export function SyllabusExplorer({ exam }: SyllabusExplorerProps) {
                   </div>
 
                   <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                      PDF Document
+                      <span className="text-[10px] uppercase font-bold text-slate-400">
+                      {res.resource_type.replaceAll("_", " ")}
                     </span>
-                    <span className="text-xs font-medium text-slate-500">Secure reader not configured</span>
+                    <span className={`rounded-full px-2 py-1 text-[9px] font-bold ${res.is_paid ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>{res.is_paid ? "Subscription required" : "Free access"}</span>
                   </div>
+                  <p className="mt-3 text-[10px] leading-5 text-slate-500">In-app note reading is not available yet.</p>
                 </div>
               ))}
             </div>
