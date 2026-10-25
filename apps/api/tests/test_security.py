@@ -321,6 +321,18 @@ async def test_unauthenticated_protected_routes():
             assert res.status_code == 401, f"{method} {path} returned {res.status_code}"
 
 
+@pytest.mark.asyncio
+async def test_student_cannot_download_source_study_pdf():
+    """Source PDFs remain restricted to content staff until the paid reader exists."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=BASE) as c:
+        tok = await _login(c, "student@examplatform.dev", "Student@Dev123")
+        response = await c.get(
+            "/api/v1/resources/00000000-0000-0000-0000-000000000001/download",
+            headers={"Authorization": f"Bearer {tok['access_token']}"},
+        )
+        assert response.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # 9. Student cannot reach admin routes
 # ---------------------------------------------------------------------------

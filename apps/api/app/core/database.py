@@ -25,8 +25,11 @@ if "sqlite" in settings.DATABASE_URL:
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 else:
     engine_kwargs.update({
-        "pool_size": 20,
-        "max_overflow": 10,
+        # Bound per-process connections; use the provider's pooled URL on
+        # serverless deployments to avoid multiplying large pools per worker.
+        "pool_size": 5,
+        "max_overflow": 0,
+        "pool_timeout": 10,
         "pool_pre_ping": True,
     })
 

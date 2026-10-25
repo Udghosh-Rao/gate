@@ -38,10 +38,6 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     AUTH_RATE_LIMIT_PER_MINUTE: int = 15
 
-    # Admin Bootstrap (dev only)
-    BOOTSTRAP_ADMIN_EMAIL: str = "admin@examplatform.dev"
-    BOOTSTRAP_ADMIN_PASSWORD: str = "Admin@Dev123"
-
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: str | List[str]) -> List[str]:
@@ -77,14 +73,16 @@ class Settings(BaseSettings):
                 raise ValueError("Production security violation: DEBUG mode must be disabled in production.")
             if "sqlite" in self.DATABASE_URL.lower():
                 raise ValueError("Production security violation: SQLite is not supported for production. Use PostgreSQL.")
-            if self.REDIS_URL.lower().startswith(("redis://localhost", "redis://127.0.0.1")):
-                raise ValueError("Production security violation: configure a shared Redis service for revocation and rate limits.")
+            if "sqlite" in self.DATABASE_URL_SYNC.lower():
+                raise ValueError("Production security violation: DATABASE_URL_SYNC must point to PostgreSQL for release migrations.")
+            if not self.REDIS_URL.lower().startswith("rediss://"):
+                raise ValueError("Production security violation: configure shared TLS-enabled Redis for revocation and rate limits.")
+            if not self.RATE_LIMIT_ENABLED:
+                raise ValueError("Production security violation: RATE_LIMIT_ENABLED must be true.")
             if any(origin.startswith(("http://localhost", "http://127.0.0.1")) for origin in self.CORS_ORIGINS):
                 raise ValueError("Production security violation: remove localhost origins from CORS_ORIGINS.")
-            if self.BOOTSTRAP_ADMIN_PASSWORD == "Admin@Dev123":
-                raise ValueError(
-                    "Production security violation: Default bootstrap password must not be used in production."
-                )
+            if "*" in self.CORS_ORIGINS:
+                raise ValueError("Production security violation: CORS_ORIGINS must list exact trusted origins.")
         return self
 
     model_config = {

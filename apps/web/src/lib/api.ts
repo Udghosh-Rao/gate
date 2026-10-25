@@ -15,8 +15,17 @@ import {
   StudentAttemptSummary,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-export const resourceDownloadUrl = (resourceId: string) => `${API_BASE}/resources/${resourceId}/download`;
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+const API_BASE = CONFIGURED_API_BASE || (process.env.NODE_ENV === "development" ? "http://localhost:8000/api/v1" : "");
+
+function getApiBase(): string {
+  if (!API_BASE) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured for this deployment.");
+  }
+  return API_BASE;
+}
+
+export const resourceDownloadUrl = (resourceId: string) => `${getApiBase()}/resources/${resourceId}/download`;
 
 // Local Storage Auth & Token Management
 export function getStoredUser(): User | null {
@@ -67,7 +76,7 @@ export async function apiLogin(
   email: string,
   password: string
 ): Promise<{ user: User; token: string }> {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const res = await fetch(`${getApiBase()}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
@@ -83,7 +92,7 @@ export async function apiLogin(
   setAuthToken(token);
 
   // Fetch verified user profile using JWT
-  const meRes = await fetch(`${API_BASE}/auth/me`, {
+  const meRes = await fetch(`${getApiBase()}/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
 
@@ -102,7 +111,7 @@ export async function apiRegister(
   fullName: string,
   phone?: string
 ): Promise<{ user: User; token: string }> {
-  const res = await fetch(`${API_BASE}/auth/register`, {
+  const res = await fetch(`${getApiBase()}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -133,7 +142,7 @@ export async function apiGetMe(): Promise<User | null> {
   if (!token) return null;
 
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await fetch(`${getApiBase()}/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -152,7 +161,7 @@ export async function apiLogout(): Promise<void> {
   const token = getAuthToken();
   try {
     if (token) {
-      await fetch(`${API_BASE}/auth/logout`, {
+      await fetch(`${getApiBase()}/auth/logout`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -166,7 +175,7 @@ export async function apiLogout(): Promise<void> {
 
 // API client functions
 export async function fetchExams(): Promise<Exam[]> {
-  const res = await fetch(`${API_BASE}/exams`, { cache: "no-store" });
+  const res = await fetch(`${getApiBase()}/exams`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Unable to load examinations (${res.status})`);
   const data: unknown = await res.json();
   if (!Array.isArray(data)) throw new Error("Invalid examination response");
@@ -175,7 +184,7 @@ export async function fetchExams(): Promise<Exam[]> {
 
 export async function fetchExamBySlug(slug: string): Promise<Exam | undefined> {
   try {
-    const res = await fetch(`${API_BASE}/exams/${slug}`);
+    const res = await fetch(`${getApiBase()}/exams/${slug}`);
     if (!res.ok) return undefined;
     return await res.json();
   } catch {
@@ -185,7 +194,7 @@ export async function fetchExamBySlug(slug: string): Promise<Exam | undefined> {
 
 export async function fetchSubjects(examId: string): Promise<Subject[]> {
   if (!examId) return [];
-  const res = await fetch(`${API_BASE}/exams/${examId}/subjects`);
+  const res = await fetch(`${getApiBase()}/exams/${examId}/subjects`);
   if (!res.ok) throw new Error(`Unable to load subjects (${res.status})`);
   const data: unknown = await res.json();
   if (!Array.isArray(data)) throw new Error("Invalid subject response");
@@ -194,7 +203,7 @@ export async function fetchSubjects(examId: string): Promise<Subject[]> {
 
 export async function fetchTopics(subjectId: string): Promise<Topic[]> {
   if (!subjectId) return [];
-  const res = await fetch(`${API_BASE}/subjects/${subjectId}/topics`);
+  const res = await fetch(`${getApiBase()}/subjects/${subjectId}/topics`);
   if (!res.ok) throw new Error(`Unable to load syllabus topics (${res.status})`);
   const data: unknown = await res.json();
   if (!Array.isArray(data)) throw new Error("Invalid topic response");
@@ -203,7 +212,7 @@ export async function fetchTopics(subjectId: string): Promise<Topic[]> {
 
 export async function fetchTests(examId: string): Promise<Test[]> {
   if (!examId) return [];
-  const res = await fetch(`${API_BASE}/exams/${examId}/tests`);
+  const res = await fetch(`${getApiBase()}/exams/${examId}/tests`);
   if (!res.ok) throw new Error(`Unable to load tests (${res.status})`);
   const data: unknown = await res.json();
   if (!Array.isArray(data)) throw new Error("Invalid test response");
@@ -213,7 +222,7 @@ export async function fetchTests(examId: string): Promise<Test[]> {
 export async function fetchTestById(testId: string): Promise<Test | undefined> {
   if (!testId) return undefined;
   try {
-    const res = await fetch(`${API_BASE}/tests/${testId}`);
+    const res = await fetch(`${getApiBase()}/tests/${testId}`);
     if (!res.ok) return undefined;
     return await res.json();
   } catch {
@@ -230,7 +239,7 @@ export async function startAttempt(
     throw new Error("You must be logged in to start a test.");
   }
 
-  const res = await fetch(`${API_BASE}/tests/${testId}/attempts`, {
+  const res = await fetch(`${getApiBase()}/tests/${testId}/attempts`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -270,7 +279,7 @@ export async function saveAttemptAnswer(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
-  const res = await fetch(`${API_BASE}/attempts/${attemptId}/answers/${questionId}`, {
+  const res = await fetch(`${getApiBase()}/attempts/${attemptId}/answers/${questionId}`, {
     method: "PUT",
     headers,
     body: JSON.stringify(answer),
@@ -296,7 +305,7 @@ export async function submitAttempt(
     Authorization: `Bearer ${authToken}`,
   };
 
-  const submitRes = await fetch(`${API_BASE}/attempts/${attemptId}/submit`, {
+  const submitRes = await fetch(`${getApiBase()}/attempts/${attemptId}/submit`, {
     method: "POST",
     headers,
   });
@@ -314,7 +323,7 @@ export async function submitAttempt(
 
   // Fetch the evaluated result (may need a brief retry if evaluation is async)
   for (let attempt = 0; attempt < 3; attempt++) {
-    const resultRes = await fetch(`${API_BASE}/attempts/${attemptId}/result`, { headers });
+    const resultRes = await fetch(`${getApiBase()}/attempts/${attemptId}/result`, { headers });
     if (resultRes.ok) {
       return await resultRes.json();
     }
@@ -335,7 +344,7 @@ export async function apiCreateExam(examData: Partial<Exam>, token?: string): Pr
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/admin/exams`, {
+    const res = await fetch(`${getApiBase()}/admin/exams`, {
       method: "POST",
       headers,
       body: JSON.stringify(examData),
@@ -354,14 +363,14 @@ export async function apiFetchAdminMetrics(token?: string): Promise<AdminDashboa
   const authToken = token || getAuthToken();
   const headers: Record<string, string> = {};
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  const res = await fetch(`${API_BASE}/admin/dashboard`, { headers });
+  const res = await fetch(`${getApiBase()}/admin/dashboard`, { headers });
   if (!res.ok) throw new Error(`Unable to load admin metrics (${res.status})`);
   return await res.json();
 }
 
 // Resource / Study Material Management
 export async function fetchPublishedResources(examId: string, topicId?: string): Promise<Resource[]> {
-  let url = `${API_BASE}/exams/${examId}/resources`;
+  let url = `${getApiBase()}/exams/${examId}/resources`;
   if (topicId) url += `?topic_id=${topicId}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Unable to load study materials (${res.status})`);
@@ -373,7 +382,7 @@ export async function fetchAdminResources(examId: string, token?: string): Promi
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = {};
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/exams/${examId}/resources`, { headers });
+    const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, { headers });
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -386,7 +395,7 @@ export async function apiCreateResource(examId: string, data: Partial<Resource>,
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/exams/${examId}/resources`, {
+    const res = await fetch(`${getApiBase()}/admin/exams/${examId}/resources`, {
       method: "POST",
       headers,
       body: JSON.stringify(data),
@@ -403,7 +412,7 @@ export async function apiUpdateResource(resourceId: string, data: Partial<Resour
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/resources/${resourceId}`, {
+    const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
       method: "PATCH",
       headers,
       body: JSON.stringify(data),
@@ -420,7 +429,7 @@ export async function apiDeleteResource(resourceId: string, token?: string): Pro
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = {};
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/resources/${resourceId}`, {
+    const res = await fetch(`${getApiBase()}/admin/resources/${resourceId}`, {
       method: "DELETE",
       headers,
     });
@@ -448,7 +457,7 @@ export async function apiUploadStudyMaterial(
   if (description) params.append("description", description);
 
   const res = await fetch(
-    `${API_BASE}/admin/exams/${examId}/resources/upload?${params.toString()}`,
+    `${getApiBase()}/admin/exams/${examId}/resources/upload?${params.toString()}`,
     {
       method: "POST",
       headers,
@@ -468,7 +477,7 @@ export async function fetchAdminQuestions(examId: string, token?: string): Promi
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = {};
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/questions?exam_id=${examId}&limit=100`, { headers });
+    const res = await fetch(`${getApiBase()}/admin/questions?exam_id=${examId}&limit=100`, { headers });
     if (!res.ok) return [];
     return await res.json();
   } catch {
@@ -513,7 +522,7 @@ export async function apiCreateQuestion(data: QuestionCreatePayload, token?: str
   const authToken = token || getAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  const res = await fetch(`${API_BASE}/admin/questions`, {
+  const res = await fetch(`${getApiBase()}/admin/questions`, {
     method: "POST",
     headers,
     body: JSON.stringify(data),
@@ -530,7 +539,7 @@ export async function apiCreateTest(examId: string, data: TestCreatePayload, tok
   const authToken = token || getAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-  const res = await fetch(`${API_BASE}/admin/exams/${examId}/tests`, {
+  const res = await fetch(`${getApiBase()}/admin/exams/${examId}/tests`, {
     method: "POST",
     headers,
     body: JSON.stringify(data),
@@ -547,7 +556,7 @@ export async function apiPublishTest(testId: string, token?: string): Promise<Te
     const authToken = token || getAuthToken();
     const headers: Record<string, string> = {};
     if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-    const res = await fetch(`${API_BASE}/admin/tests/${testId}/publish`, {
+    const res = await fetch(`${getApiBase()}/admin/tests/${testId}/publish`, {
       method: "POST",
       headers,
     });
@@ -563,7 +572,7 @@ export async function fetchStudentAttemptsList(token?: string): Promise<StudentA
   try {
     const authToken = token || getAuthToken();
     if (!authToken) return [];
-    const res = await fetch(`${API_BASE}/student/attempts`, {
+    const res = await fetch(`${getApiBase()}/student/attempts`, {
       headers: { Authorization: `Bearer ${authToken}` },
     });
     if (!res.ok) return [];

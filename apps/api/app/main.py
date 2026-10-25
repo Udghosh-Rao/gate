@@ -4,7 +4,6 @@ Configures CORS, routers, database lifecycle, and health endpoints.
 """
 
 from contextlib import asynccontextmanager
-import os
 
 from fastapi import FastAPI, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,18 +18,16 @@ from app.routers import auth, exams, tests, admin
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle manager: initialize DB tables on startup."""
-    # Ensure upload directory exists BEFORE mounting static files
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    """Lifecycle manager: connect shared production services when needed."""
 
     if settings.is_production:
-        # Production uses managed object storage and private downloads; local
-        # filesystem paths are never exposed as static content.
+        # Production requires shared infrastructure for token revocation and
+        # rate limits. Source-file delivery remains staff-only until private
+        # student content delivery is implemented.
         Redis.from_url(settings.REDIS_URL).ping()
-    # Uploaded files are served through an authorization-aware download route,
-    # never through a static directory mount (which would expose drafts).
 
-    # Create tables if not present
+    # Create tables only for local development. Production deployments must run
+    # Alembic migrations as an explicit release step.
     if not settings.is_production:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

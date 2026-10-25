@@ -323,8 +323,14 @@ async def upload_study_material(
 @router.get("/resources/{resource_id}/download")
 async def download_resource(
     resource_id: UUID,
+    current_user: Annotated[User, Depends(require_admin_or_content_manager)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """Allow content staff to retrieve source files for administration.
+
+    Student delivery is intentionally disabled until private page rendering
+    and subscription entitlement checks are implemented.
+    """
     row_result = await db.execute(select(Resource).where(Resource.id == resource_id))
     resource = row_result.scalar_one_or_none()
     if resource is None or not resource.file_url:
